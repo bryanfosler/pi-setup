@@ -1,0 +1,12 @@
+[Unit]
+Description=ALSA MIDI Routing - Bidirectional Mac <-> C2MIDI Pro
+After=rtpmidid.service sound.target
+Requires=rtpmidid.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/midi-routing.sh
+
+[Install]
+WantedBy=multi-user.target

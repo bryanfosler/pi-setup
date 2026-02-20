@@ -1,0 +1,11 @@
+[Unit]
+Description=rtpMIDI Daemon
+After=network.target avahi-daemon.service
+
+[Service]
+ExecStart=/usr/local/bin/rtpmidid --port 5004
+Restart=on-failure
+User=root
+
+[Install]
+WantedBy=multi-user.target
