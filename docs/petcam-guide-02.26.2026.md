@@ -8,6 +8,7 @@
 ```
 USB Webcam
     ↓  reads frames continuously (OpenCV)
+    ├─→ MJPEG stream server (port 8080) ──→ 📱 Safari: live video
     ↓  compares each frame to the previous one
 Motion detected (pixel diff > threshold)
     ↓
@@ -20,6 +21,16 @@ ntfy.sh push notification → 📱 your phone
     ↓
 60 second cooldown
 ```
+
+## Live Stream
+
+Open in any browser on your network — no app needed:
+
+```
+http://bryanfoslerpi5.local:8080
+```
+
+Works in Safari on iPhone. The stream runs at ~10fps alongside motion detection — both share the same camera feed with no conflicts.
 
 ---
 
@@ -114,6 +125,8 @@ sudo systemctl disable petcam
 
 | Problem | Fix |
 |---------|-----|
+| Live stream page won't load | Confirm petcam service is running; check port 8080 isn't blocked |
+| Stream is laggy | Normal on Pi — it's ~10fps by design; raise JPEG quality if needed |
 | `Could not open camera device 0` | Try `CAMERA_DEVICE = 1` in config; confirm webcam is plugged in |
 | No notifications arriving | Test with `curl -d "test" ntfy.sh/YOUR_TOPIC` from Pi |
 | Too many false notifications | Raise `MOTION_THRESHOLD` (try 10000–20000) |

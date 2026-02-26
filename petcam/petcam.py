@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-petcam.py — Motion-triggered AI pet camera
+petcam.py — Motion-triggered AI pet camera with live stream
 Watches a USB webcam, detects motion, sends frame to moondream2 for
-description, and pushes a notification (with image) to your phone via ntfy.sh
+description, and pushes a notification (with image) to your phone via ntfy.sh.
+Also serves a live MJPEG stream at http://bryanfoslerpi5.local:8080/stream
 """
 
 import cv2
@@ -10,8 +11,10 @@ import base64
 import time
 import logging
 import requests
+import threading
 import numpy as np
 from datetime import datetime
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────────
 
@@ -41,6 +44,9 @@ VISION_PROMPT = (
 # Empty list = notify on all motion.
 NOTIFY_KEYWORDS = ["dog", "cat", "pet", "animal", "person", "someone"]
 
+# Live stream port — view at http://bryanfoslerpi5.local:8080/stream
+STREAM_PORT = 8080
+
 # ─── LOGGING ─────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -49,6 +55,86 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+# ─── SHARED FRAME STATE ──────────────────────────────────────────────────────
+
+# Latest frame shared between the capture loop and the stream server
+_latest_frame = None
+_frame_lock = threading.Lock()
+
+
+def set_latest_frame(frame):
+    global _latest_frame
+    with _frame_lock:
+        _latest_frame = frame.copy()
+
+
+def get_latest_frame():
+    with _frame_lock:
+        return _latest_frame.copy() if _latest_frame is not None else None
+
+
+# ─── MJPEG STREAM SERVER ─────────────────────────────────────────────────────
+
+class StreamHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass  # suppress per-request HTTP logs
+
+    def do_GET(self):
+        if self.path == "/stream":
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+            self.end_headers()
+            try:
+                while True:
+                    frame = get_latest_frame()
+                    if frame is None:
+                        time.sleep(0.1)
+                        continue
+                    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    jpg = buffer.tobytes()
+                    self.wfile.write(b"--frame\r\n")
+                    self.wfile.write(b"Content-Type: image/jpeg\r\n\r\n")
+                    self.wfile.write(jpg)
+                    self.wfile.write(b"\r\n")
+                    time.sleep(0.1)  # ~10 fps
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # client disconnected
+
+        elif self.path == "/" or self.path == "/index.html":
+            # Simple HTML page with the stream embedded
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pet Cam</title>
+  <style>
+    body {{ margin: 0; background: #111; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; min-height: 100vh; }}
+    img  {{ max-width: 100%; border-radius: 8px; }}
+    p    {{ color: #888; font-family: sans-serif; font-size: 13px; margin-top: 8px; }}
+  </style>
+</head>
+<body>
+  <img src="/stream" alt="Pet cam live feed">
+  <p>bryanfoslerpi5 &mdash; live</p>
+</body>
+</html>"""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(html.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+
+def start_stream_server():
+    server = HTTPServer(("0.0.0.0", STREAM_PORT), StreamHandler)
+    log.info(f"Live stream → http://bryanfoslerpi5.local:{STREAM_PORT}")
+    server.serve_forever()
+
 
 # ─── CORE FUNCTIONS ──────────────────────────────────────────────────────────
 
@@ -127,6 +213,10 @@ def main():
     log.info(f"Notifications → ntfy.sh/{NTFY_TOPIC}")
     log.info(f"Vision model  → {VISION_MODEL} via {OLLAMA_URL}")
 
+    # Start MJPEG stream server in background thread
+    stream_thread = threading.Thread(target=start_stream_server, daemon=True)
+    stream_thread.start()
+
     cap = cv2.VideoCapture(CAMERA_DEVICE)
     if not cap.isOpened():
         raise RuntimeError(f"Could not open camera device {CAMERA_DEVICE}. "
@@ -139,6 +229,7 @@ def main():
     if not ret:
         raise RuntimeError("Could not read first frame from camera.")
 
+    set_latest_frame(frame)
     prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
 
@@ -152,6 +243,9 @@ def main():
                 log.warning("Failed to read frame — retrying...")
                 time.sleep(1)
                 continue
+
+            # Always update the shared frame for the live stream
+            set_latest_frame(frame)
 
             curr_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             curr_gray = cv2.GaussianBlur(curr_gray, (21, 21), 0)
