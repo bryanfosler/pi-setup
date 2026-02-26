@@ -88,6 +88,59 @@ CME Keyboard → USB → Pi (ALSA client 24)
 
 ---
 
+---
+
+## Pi 5 USB: What Each Port Actually Does
+
+This one trips people up. The Pi 5 has three kinds of ports and none of them do what you might hope for networking:
+
+- **USB-C** — power delivery only. No data. Can't use it to connect to a Mac.
+- **USB-A (x4)** — these are *host* ports. Things plug *into* the Pi here (keyboard, MIDI controller, USB drive). You can't plug the Pi into your Mac through these.
+- **Ethernet** — this is your SSH port. Always.
+
+The Pi Zero is the famous one that supports USB networking (OTG mode) — you plug it into your Mac's USB and it shows up as a network device. Pi 5 simply doesn't support that. If you're ever stuck without ethernet, you need WiFi.
+
+---
+
+## SSH: What "Connected" Actually Looks Like
+
+When SSH works, it looks anticlimactic. No splash screen, no loading bar. You just get:
+
+```
+bfosler@bryanfoslerpi5:~$
+```
+
+That `$` is the Pi waiting for you. If you see that, you're in. If the terminal just hangs after running the SSH command, the Pi isn't reachable — either it's off, on a different network, or SSH isn't running.
+
+Adding `-v` to your SSH command (`ssh -v bfosler@bryanfoslerpi5.local`) shows you exactly where it's stuck. The most common hang point is `Connecting to bryanfoslerpi5.local port 22...` — which means the hostname resolved but the TCP connection never opened.
+
+---
+
+## nmcli: Managing WiFi Networks Like a Pro
+
+`nmcli` is the command-line tool for NetworkManager on Linux. Think of it like your Mac's Network System Settings, but text-based. It manages connections, priorities, and switching.
+
+**Key concept: autoconnect-priority**
+Every saved network has a priority number. When the Pi boots or loses a connection, it scans for all networks it knows and connects to whichever has the highest priority that it can actually see. Higher number = preferred.
+
+Our setup:
+```
+Home WiFi:         priority 10  ← always preferred when home
+iPhone Hotspot:    priority  5  ← travel fallback
+Mac Int. Sharing:  priority  3  ← last resort
+```
+
+This means you never have to think about it — the Pi figures it out. But if you *want* to force a specific network (say you're home but want to test the hotspot), `switch-network.sh iphone` overrides and connects manually.
+
+**The add/switch scripts we wrote** handle all of this so you don't have to remember nmcli syntax. But if you ever need to do it raw:
+```bash
+nmcli connection show                          # list all saved connections
+nmcli connection up iphone-hotspot            # manually connect
+nmcli connection modify home connection.autoconnect-priority 10  # set priority
+```
+
+---
+
 ## Key Commands to Know
 
 ```bash

@@ -1,3 +1,27 @@
+## Session 2 — Quick Reference Doc + Network Switching Scripts
+
+**Date:** 02.26.2026
+**Time spent:** ~45m
+
+### What We Built
+- `docs/pi5-quick-reference-02.26.2026.md` — full Pi 5 command reference (SSH, system info, services, logs, file system, networking, updates, MIDI, troubleshooting)
+- `setup/add-networks.sh` — one-time script to add iPhone hotspot + Mac Internet Sharing with autoconnect priorities
+- `setup/switch-network.sh` — manual network switcher with `home/iphone/mac` shortcuts
+
+### What Shipped
+- All three files committed and pushed to `bryanfosler/pi-setup`
+- iPhone hotspot credentials already filled in; Mac Internet Sharing placeholders to complete at home
+
+### Bugs Fixed
+- N/A (documentation + prep session)
+
+### Decisions Made
+- Network priority order: home WiFi=10, iPhone hotspot=5, Mac Internet Sharing=3
+- iPhone hotspot preferred over Mac Internet Sharing for travel (simpler, works regardless of Mac state)
+- Pi 5 USB-C is power only, USB-A ports are host only — ethernet or WiFi required for SSH
+
+---
+
 ## Session 1 — Headless rtpMIDI + Mac MIDI Routing
 
 **Date:** 02.20.2026
