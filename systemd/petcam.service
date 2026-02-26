@@ -1,0 +1,14 @@
+[Unit]
+Description=Pet cam — motion-triggered AI camera
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=__USER__
+ExecStart=__VENV_DIR__/bin/python3 __SCRIPT_DIR__/petcam.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
