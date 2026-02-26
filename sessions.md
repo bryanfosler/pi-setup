@@ -1,3 +1,32 @@
+## Session 3 — Ollama, Open-WebUI, Pet Cam + Live Stream
+
+**Date:** 02.26.2026
+**Time spent:** ~1h 30m
+
+### What We Built
+- `setup/install-ollama.sh` — installs Ollama with LAN network access, pulls `llama3.2:3b`
+- `setup/install-open-webui.sh` — browser chat UI in Python venv, systemd service on port 3000
+- `petcam/petcam.py` — motion detection + moondream2 AI description + ntfy.sh push notifications + built-in MJPEG live stream on port 8080
+- `setup/install-petcam.sh` — full petcam install script
+- `docs/ollama-guide-02.26.2026.md` — Ollama model reference and API usage
+- `docs/petcam-guide-02.26.2026.md` — pet cam config, tuning, troubleshooting
+- `docs/full-setup-guide-02.26.2026.md` — end-to-end deployment guide covering all steps in order
+
+### What Shipped
+- All files committed and pushed to `bryanfosler/pi-setup`
+- Ready to deploy: `git clone` repo on Pi, then run install scripts in order
+
+### Bugs Fixed
+- N/A (new feature session)
+
+### Decisions Made
+- Single process owns camera — MJPEG stream server runs in background thread, no `/dev/video0` conflict
+- ntfy.sh for push notifications (reaches phone anywhere, already works off-network)
+- Tailscale for remote SSH/stream/API access (covers all services, free)
+- Scripts require `git clone` on Pi first — they reference sibling files (systemd/, petcam/)
+
+---
+
 ## Session 2 — Quick Reference Doc + Network Switching Scripts
 
 **Date:** 02.26.2026

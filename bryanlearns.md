@@ -141,6 +141,67 @@ nmcli connection modify home connection.autoconnect-priority 10  # set priority
 
 ---
 
+---
+
+## Ollama: Running AI Models Locally
+
+Ollama is a tool that lets you download and run large language models (LLMs) on your own hardware — no internet required once the model is downloaded, no API costs, no data leaving your network.
+
+Think of it like a local version of ChatGPT running entirely on your Pi. The tradeoff is speed — a 3 billion parameter model on a Pi 5 generates about 8-12 words per second, which feels a bit slow compared to cloud AI but is totally usable.
+
+**The model size vs. speed tradeoff on Pi 5 (8GB):**
+- `llama3.2:1b` — 1 billion parameters, 1.3GB, ~15-20 tok/s. Fast but simple.
+- `llama3.2:3b` — 3 billion parameters, 2GB, ~8-12 tok/s. Good sweet spot.
+- `mistral:7b` — 7 billion parameters, 4.1GB, ~3-5 tok/s. More capable, noticeably slow.
+
+Parameters are roughly analogous to "how much the model knows." More parameters = smarter but slower and heavier. Your 8GB of RAM is the hard ceiling — a model plus its working memory has to fit in RAM or it won't run at all.
+
+**The network access piece:** By default, Ollama only accepts connections from the Pi itself (localhost). We added one environment variable — `OLLAMA_HOST=0.0.0.0:11434` — which tells it to listen on all network interfaces. That's what lets your Mac (or any device on your network) call the API. Without that, you'd have to SSH in and curl from the Pi itself.
+
+---
+
+## How the Pet Cam Avoids a Classic Problem
+
+Here's a problem we had to solve: the motion detection code and the live stream both need to read from the webcam. On Linux, most USB webcams only allow **one process to open them at a time**. If you tried to run a separate streaming app (like `mjpeg-streamer`) alongside the petcam script, one of them would fail with "device busy."
+
+The solution: **one process, two threads**.
+
+Python's `threading` module lets you run multiple things concurrently inside a single program. Our petcam.py does this:
+- **Main thread** — reads frames from the camera, runs motion detection, calls Ollama
+- **Background thread** — runs a tiny HTTP server that streams those same frames to your browser
+
+Both threads share a single frame buffer (a variable protected by a lock so they don't overwrite each other mid-read). The camera stays open in one place, and both features work simultaneously.
+
+It's like one chef cooking who also hands plates to a waiter — vs. two separate chefs fighting over the same pan.
+
+---
+
+## ntfy.sh: Push Notifications Without an Account
+
+ntfy.sh is beautifully simple. There's no account, no signup. You just POST to a URL that includes your "topic" name, and anyone subscribed to that topic gets the notification.
+
+```bash
+curl -d "your dog is on the couch" ntfy.sh/bryanpi-petcam
+```
+
+That's the whole API. The topic name is essentially a shared secret — anyone who knows it can send to or subscribe to it. Pick something unique and non-guessable.
+
+The iOS app subscribes to topics and shows them as native push notifications. You can attach images too (send the image as the request body, put the message in a header) — that's how the pet cam sends you a photo of whatever triggered the alert.
+
+---
+
+## Tailscale: A VPN That Just Works
+
+Your Pi is on your home network, behind your router's firewall. From outside — on your phone's cellular, at a coffee shop — there's no way to reach it directly. Your router doesn't know to forward incoming connections to the Pi.
+
+Tailscale solves this by creating a **mesh VPN**. Each device you add (Pi, iPhone, Mac) connects to Tailscale's coordination server and gets a stable private IP in the `100.x.x.x` range. When your phone wants to reach the Pi, Tailscale brokers a direct peer-to-peer connection — your phone and Pi talk directly, encrypted, with Tailscale only handling the handshake.
+
+The result: your Pi gets a permanent address like `100.64.x.x` that your phone can always reach, no matter where either device is. SSH, the live stream, Open-WebUI, the Ollama API — all of it becomes accessible from anywhere with zero extra configuration per service.
+
+Free tier covers everything we need (up to 100 devices).
+
+---
+
 ## Key Commands to Know
 
 ```bash
