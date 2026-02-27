@@ -357,12 +357,15 @@ def configure_adapter(bus, adapter_path):
 # ── ALSA poll thread ───────────────────────────────────────────────────────────
 
 def alsa_poll_loop(alsa, chrc, stop_event):
-    """Poll ALSA for incoming MIDI and forward to BLE characteristic."""
+    """Poll ALSA for incoming MIDI and forward to BLE characteristic.
+    Schedules notifications on the GLib main loop — dbus-python signals
+    must be emitted from the main thread, not background threads."""
     while not stop_event.is_set():
         msg = alsa.poll()
         if msg:
             data, _ = msg
-            chrc.notify_midi(data)
+            # Schedule on main loop thread so D-Bus signal is emitted correctly
+            GLib.idle_add(chrc.notify_midi, data)
         else:
             time.sleep(0.001)   # 1 ms
 
