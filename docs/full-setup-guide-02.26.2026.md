@@ -164,6 +164,80 @@ Open in Safari on iPhone — no app needed, ~10fps.
 
 ---
 
+## Step 5b — BLE MIDI Peripheral (Bluetooth MIDI)
+
+Makes the Pi visible as a Bluetooth MIDI device — no WiFi required for MIDI.
+Mac/iOS connects directly via Bluetooth in Audio MIDI Setup.
+
+```bash
+bash setup/install-bt-midi.sh
+```
+
+**What this does:**
+- Installs bluez + Python BLE GATT dependencies
+- Deploys `bt-midi-peripheral.py` — implements the BLE MIDI spec (MMA)
+- Registers `bt-midi.service` — starts automatically on boot, after bluetooth
+
+**Connect on Mac:**
+1. Open **Audio MIDI Setup** (Spotlight → "Audio MIDI Setup")
+2. **Window → Show MIDI Studio**
+3. Double-click the **Bluetooth** icon in the toolbar
+4. Find **"Pi BT MIDI"** → click **Connect**
+
+After connecting, the Pi appears as a MIDI device in GarageBand, Logic, or any MIDI app — just like the network MIDI session but over Bluetooth.
+
+**MIDI routing:** BLE MIDI ↔ ALSA virtual port "Pi BT MIDI". Wire it to the C2MIDI Pro with aconnect if you want the keyboard → BT chain:
+```bash
+aconnect "C2MIDI Pro MIDI 1" "Pi BT MIDI"
+aconnect "Pi BT MIDI" "C2MIDI Pro MIDI 1"
+```
+
+**Check the service:**
+```bash
+journalctl -u bt-midi -f
+sudo systemctl status bt-midi
+```
+
+> **Network MIDI vs BLE MIDI:** Both work. Network MIDI (rtpmidid) is lower latency on a good WiFi network. BLE MIDI works anywhere — no WiFi needed — but adds ~5-10ms of BLE latency. Use whichever fits the situation.
+
+---
+
+## Step 5c — Pi WiFi Hotspot
+
+Lets the Pi create its own WiFi network. Use this when there's no router, no iPhone, no ethernet — Mac connects to the Pi directly.
+
+**Before running — set a password in the script:**
+```bash
+nano setup/setup-hotspot.sh
+```
+Set `HOTSPOT_PASSWORD` to something 8+ characters.
+
+```bash
+bash setup/setup-hotspot.sh
+```
+
+**Network priority order (updated):**
+| Network | Priority | Notes |
+|---------|---------|-------|
+| Home WiFi | 10 | always preferred when home |
+| iPhone Hotspot | 5 | travel fallback |
+| Mac Internet Sharing | 3 | last resort client mode |
+| Pi Hotspot | manual only | Pi becomes the AP, no autoconnect |
+
+**Using the hotspot:**
+```bash
+bash setup/switch-network.sh hotspot   # Pi starts broadcasting BryanPi5
+bash setup/switch-network.sh home      # back to normal WiFi
+```
+
+While hotspot is active:
+- Pi IP: `192.168.100.1`
+- SSH: `ssh bfosler@192.168.100.1`
+- All services reachable at `192.168.100.1` (Ollama, Open-WebUI, petcam, MIDI)
+- Pi has no internet access (single WiFi radio — can't uplink and host simultaneously)
+
+---
+
 ## Step 6 — Remote Access (Tailscale)
 
 Lets you SSH, view the stream, and use Open-WebUI from anywhere — not just home WiFi.
@@ -203,7 +277,8 @@ tailscale ip
 | Ollama API | 11434 | LAN + Tailscale | `ollama.service` |
 | Open-WebUI | 3000 | LAN + Tailscale | `open-webui.service` |
 | Pet cam stream | 8080 | LAN + Tailscale | `petcam.service` |
-| rtpmidid (MIDI) | 5004/5005 UDP | LAN | `rtpmidid.service` |
+| rtpmidid (Network MIDI) | 5004/5005 UDP | LAN | `rtpmidid.service` |
+| BLE MIDI | Bluetooth | Bluetooth range | `bt-midi.service` |
 
 ---
 

@@ -1,0 +1,17 @@
+[Unit]
+Description=BLE MIDI Peripheral — Pi BT MIDI
+Documentation=https://github.com/bryanfosler/pi-setup
+After=bluetooth.target sound.target
+Requires=bluetooth.target
+
+[Service]
+Type=simple
+User=bfosler
+ExecStart=/opt/bt-midi-venv/bin/python3 /usr/local/lib/bt-midi/bt-midi-peripheral.py
+Restart=on-failure
+RestartSec=5
+# Allow access to D-Bus system bus for bluez
+Environment=DBUS_SESSION_BUS_ADDRESS=
+
+[Install]
+WantedBy=multi-user.target

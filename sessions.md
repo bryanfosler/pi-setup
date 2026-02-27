@@ -1,3 +1,31 @@
+## Session 4 — BLE MIDI Peripheral + Pi WiFi Hotspot
+
+**Date:** 02.26.2026
+**Time spent:** ~1h 30m
+
+### What We Built
+- `bt-midi/bt-midi-peripheral.py` — Python BLE MIDI peripheral using bluez GATT + D-Bus; bridges ALSA virtual port "Pi BT MIDI" ↔ BLE MIDI (MMA spec); Mac/iOS connects from Audio MIDI Setup → Bluetooth
+- `setup/install-bt-midi.sh` — installs deps (bluez, python3-dbus, python3-gi, python-rtmidi venv), deploys script, enables `bt-midi.service`
+- `systemd/bt-midi.service` — auto-starts after bluetooth.target
+- `setup/setup-hotspot.sh` — creates `pi-hotspot` NetworkManager connection in AP mode with `ipv4.method shared`; Pi broadcasts as `BryanPi5`, is reachable at `192.168.100.1`
+- Updated `setup/switch-network.sh` — added `hotspot` shortcut with proper AP ↔ client teardown logic
+
+### What Shipped
+- All files committed and pushed to `bryanfosler/pi-setup`
+- BLE MIDI and hotspot sections added to `docs/full-setup-guide-02.26.2026.md`
+- `CLAUDE.md` updated with bt-midi service row and hotspot notes
+
+### Bugs Fixed
+- N/A (new feature session)
+
+### Decisions Made
+- BLE MIDI peripheral runs as user `bfosler` (not root) — uses D-Bus system bus for bluez access
+- Python venv at `/opt/bt-midi-venv` with `--system-site-packages` to share python3-dbus/gi from system
+- Pi hotspot uses `autoconnect no` — never enables automatically, only via explicit `switch-network.sh hotspot`
+- Single WiFi radio means hotspot mode = no internet; acceptable for local MIDI/AI use case
+
+---
+
 ## Session 3 — Ollama, Open-WebUI, Pet Cam + Live Stream
 
 **Date:** 02.26.2026

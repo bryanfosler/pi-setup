@@ -1,17 +1,19 @@
 #!/bin/bash
 # switch-network.sh
-# Manually switch the Pi to a specific WiFi network.
+# Manually switch the Pi to a specific WiFi network (or hotspot mode).
 #
 # Usage:
 #   bash setup/switch-network.sh              # show status + available networks
 #   bash setup/switch-network.sh home         # connect to home WiFi
 #   bash setup/switch-network.sh iphone       # connect to iPhone hotspot
 #   bash setup/switch-network.sh mac          # connect to Mac Internet Sharing
+#   bash setup/switch-network.sh hotspot      # enable Pi hotspot (AP mode)
 
 SHORTCUTS=(
-  "home:$(nmcli -t -f NAME,TYPE connection show | grep wifi | head -1 | cut -d: -f1)"
+  "home:$(nmcli -t -f NAME,TYPE connection show | grep wifi | grep -v 'pi-hotspot\|iphone-hotspot\|mac-sharing' | head -1 | cut -d: -f1)"
   "iphone:iphone-hotspot"
   "mac:mac-sharing"
+  "hotspot:pi-hotspot"
 )
 
 resolve_shortcut() {
@@ -35,7 +37,10 @@ print_status() {
   nmcli -t -f NAME,TYPE,AUTOCONNECT-PRIORITY connection show | grep wifi | \
     awk -F: '{printf "    %-30s priority %s\n", $1, $3}' | sort -t' ' -k3 -rn
   echo ""
-  echo "Usage: $0 [home|iphone|mac|<connection-name>]"
+  echo "Usage: $0 [home|iphone|mac|hotspot|<connection-name>]"
+  echo ""
+  echo "    hotspot — Pi creates its own WiFi network (192.168.100.1)"
+  echo "              Mac connects to it; run setup/setup-hotspot.sh first"
 }
 
 if [ -z "$1" ]; then
@@ -44,6 +49,30 @@ if [ -z "$1" ]; then
 fi
 
 TARGET=$(resolve_shortcut "$1")
+
+# Hotspot requires tearing down the current client connection first
+if [ "$TARGET" = "pi-hotspot" ]; then
+  echo "==> Enabling Pi hotspot (AP mode)..."
+  # Disconnect any active WiFi client connection
+  ACTIVE=$(nmcli -t -f NAME,TYPE,STATE connection show --active | grep wifi | grep -v pi-hotspot | cut -d: -f1)
+  if [ -n "$ACTIVE" ]; then
+    echo "    Disconnecting from: $ACTIVE"
+    nmcli connection down "$ACTIVE" || true
+  fi
+  nmcli connection up pi-hotspot
+  echo ""
+  echo "==> Hotspot active — SSID: $(nmcli -t -f 802-11-wireless.ssid connection show pi-hotspot | cut -d: -f2)"
+  echo "    Pi IP: 192.168.100.1"
+  echo "    Mac SSH: ssh bfosler@192.168.100.1"
+  exit 0
+fi
+
+# If switching away from hotspot, bring it down first
+ACTIVE_HOTSPOT=$(nmcli -t -f NAME,STATE connection show --active | grep "pi-hotspot:activated" | cut -d: -f1)
+if [ -n "$ACTIVE_HOTSPOT" ]; then
+  echo "==> Disabling hotspot..."
+  nmcli connection down pi-hotspot || true
+fi
 
 echo "==> Switching to: $TARGET"
 nmcli connection up "$TARGET"

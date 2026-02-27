@@ -202,6 +202,90 @@ Free tier covers everything we need (up to 100 devices).
 
 ---
 
+## Bluetooth MIDI (BLE MIDI): A Second Way to Connect
+
+We built two MIDI paths between the Pi and Mac: **rtpMIDI** (over WiFi) and **BLE MIDI** (over Bluetooth). They do the same thing at the application level — MIDI notes and CC messages flow both ways — but the underlying plumbing is completely different.
+
+### What "BLE MIDI" Actually Means
+
+BLE stands for *Bluetooth Low Energy*, which is the modern Bluetooth protocol introduced around 2010. It's distinct from "classic Bluetooth" (the old kind used for headphones, mice, etc.). BLE is designed for small, bursty data — think fitness trackers, smartwatches, MIDI controllers.
+
+Apple pioneered BLE MIDI around 2014 — it's now an official spec from the MIDI Manufacturers Association (MMA). The spec defines exactly how MIDI packets are wrapped into BLE packets: there's a timestamp header, then the MIDI bytes. Mac, iPhone, and iPad all support it natively with zero configuration.
+
+### GATT: The BLE Application Layer
+
+BLE devices communicate through a system called **GATT** (Generic ATTribute Profile). Think of it like a menu at a restaurant:
+
+- **Service**: a category (e.g., "MIDI")
+- **Characteristic**: a specific item on the menu (e.g., "MIDI I/O")
+
+The BLE MIDI spec has exactly one service and one characteristic — both identified by fixed UUIDs (long hex numbers). When the Pi's `bt-midi-peripheral.py` starts, it:
+1. Registers a GATT server with those UUIDs via **bluez** (Linux's Bluetooth stack)
+2. Starts advertising itself over BLE so nearby devices can see it
+3. When the Mac connects and subscribes, opens a two-way MIDI pipe
+
+The Mac side is handled entirely by the OS — no drivers, no setup. It just works because Apple built the BLE MIDI client into macOS.
+
+### How We Implemented It
+
+The tricky part: bluez (the Linux BLE stack) doesn't have a simple "start a GATT server" command. You have to communicate with it through **D-Bus**, which is Linux's system message bus (a way for processes to talk to each other). Our Python script does this:
+
+```
+bt-midi-peripheral.py
+    ├── D-Bus → bluez GATT → registers MidiService + MidiCharacteristic
+    ├── D-Bus → bluez LE → starts advertisement ("Pi BT MIDI")
+    └── python-rtmidi → opens virtual ALSA port "Pi BT MIDI"
+
+When Mac connects:
+    Mac sends MIDI → BLE characteristic → WriteValue() → decode → ALSA out
+    ALSA in → ALSA poll thread → encode → notify characteristic → Mac
+```
+
+The timestamp thing is subtle: BLE MIDI packets aren't just raw MIDI bytes. Each message gets a 13-bit millisecond timestamp prepended. This lets the receiving end reconstruct precise timing even if packets arrive slightly out of order or late. We encode timestamps when sending, and strip them when receiving.
+
+### Network MIDI vs BLE MIDI: When to Use Which
+
+| | Network MIDI (rtpmidid) | BLE MIDI (bt-midi) |
+|--|--|--|
+| Requires | Same WiFi network | Within Bluetooth range (~10m) |
+| Latency | ~3-5ms (on good WiFi) | ~5-15ms |
+| Setup | Audio MIDI Setup → Network | Audio MIDI Setup → Bluetooth |
+| Works without WiFi | No | Yes |
+| Multiple clients | Yes (any device on network) | One at a time |
+
+Use Network MIDI at home (lower latency, more stable). Use BLE MIDI when you're away from home WiFi — playing in a different room, at a studio, or if your router dies.
+
+---
+
+## Pi as a WiFi Hotspot: Flipping the Network Around
+
+Every setup so far has the Pi acting as a *client* — it connects to your router, iPhone, or Mac's shared network. The hotspot is the opposite: the Pi *becomes the router*.
+
+### Why This Is Useful
+
+If you're in a situation with no home WiFi, no iPhone, and no ethernet (say, setting up in a basement studio with just the Pi and your Mac), you'd be stuck. Tailscale helps for internet access, but you still need a local network for SSH and low-latency MIDI.
+
+The hotspot solves this. The Pi broadcasts its own WiFi network (SSID: `BryanPi5`). Your Mac connects to that network. Now you have a direct Pi ↔ Mac link and everything works: SSH, Network MIDI, Ollama API, Open-WebUI.
+
+### How It Works: `ipv4.method shared`
+
+NetworkManager makes this surprisingly easy. One magic setting — `ipv4.method shared` — does two things:
+1. Assigns the Pi a static IP on that network (`192.168.100.1`)
+2. Automatically runs `dnsmasq` in the background to hand out DHCP addresses to devices that connect
+
+You don't have to install or configure `dnsmasq` yourself. NetworkManager handles it under the hood when you use AP mode with `shared` addressing. Mac connects to the Pi's network, gets an IP like `192.168.100.10`, and immediately you can `ssh bfosler@192.168.100.1`.
+
+### The One Catch: One Radio, One Role
+
+The Pi 5 has a single WiFi chip. It can either be a *client* (connecting to a network) or an *access point* (hosting a network), but not both at the same time. So when hotspot mode is active:
+- Pi is NOT connected to home WiFi, iPhone hotspot, etc.
+- Pi has no internet access
+- All services work locally (MIDI, Ollama, petcam) but can't reach the internet
+
+This is fine for the use case — you're using it for local MIDI and maybe local AI. Once you're done, `switch-network.sh home` tears down the hotspot and reconnects to your home WiFi normally.
+
+---
+
 ## Key Commands to Know
 
 ```bash
@@ -217,4 +301,12 @@ sudo ss -ulnp | grep -E '500[45]'
 
 # See live rtpmidid log (shows latency readings every 10s when Mac is connected)
 journalctl -u rtpmidid -f
+
+# Check BLE MIDI service
+journalctl -u bt-midi -f
+sudo systemctl status bt-midi
+
+# Hotspot
+bash setup/switch-network.sh hotspot   # enable
+bash setup/switch-network.sh home      # disable
 ```

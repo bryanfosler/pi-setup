@@ -15,6 +15,7 @@
 |---|---|---|---|
 | `rtpmidid` | UDP 5004/5005 | enabled, auto-start | Must use `--port 5004` flag or it won't bind |
 | `midi-routing` | — | enabled, auto-start | Waits for Mac connection, then routes bidirectionally |
+| `bt-midi` | BLE | enabled, auto-start | Pi as BLE MIDI peripheral; connects from Audio MIDI Setup → Bluetooth |
 | `ollama` | 11434 | enabled, auto-start | `OLLAMA_HOST=0.0.0.0` override in systemd drop-in |
 | `open-webui` | 3000 | enabled, auto-start | Browser chat UI, Python venv at `/opt/open-webui-venv` |
 | `petcam` | 8080 (stream) | enabled, auto-start | Motion detection + moondream2 + ntfy.sh notifications |
@@ -31,8 +32,22 @@ bash setup/add-networks.sh       # fill in HOME_SSID, MAC_SHARING_SSID, MAC_SHAR
 bash setup/install-ollama.sh
 bash setup/install-open-webui.sh
 bash setup/install-petcam.sh     # set NTFY_TOPIC in petcam/petcam.py first
+bash setup/install-bt-midi.sh    # BLE MIDI peripheral (Pi BT MIDI)
+bash setup/setup-hotspot.sh      # fill in HOTSPOT_PASSWORD first
 ```
 See `docs/full-setup-guide-02.26.2026.md` for full walkthrough.
+
+## WiFi Hotspot (Pi as AP)
+`setup/setup-hotspot.sh` configures Pi as access point (run once after filling HOTSPOT_PASSWORD).
+- Enable: `bash setup/switch-network.sh hotspot`
+- Pi IP on hotspot: `192.168.100.1`
+- Pi has no internet when in hotspot mode (one radio, no uplink)
+- Disable: `bash setup/switch-network.sh home`
+
+## BLE MIDI Key Files on Pi
+- `/usr/local/lib/bt-midi/bt-midi-peripheral.py` — main script
+- `/opt/bt-midi-venv/` — Python venv with python-rtmidi
+- `/etc/systemd/system/bt-midi.service`
 
 ## Critical: rtpmidid --port flag
 rtpmidid v2 does NOT bind to port 5004 unless `--port 5004` is explicitly passed.
