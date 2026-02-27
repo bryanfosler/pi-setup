@@ -20,7 +20,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ntfy.sh topic — change this to something unique (it's your "channel")
 # Subscribe to this topic in the ntfy iOS app
-NTFY_TOPIC = "bryanpi-petcam"
+NTFY_TOPIC = "bryan-petcam-302"
 
 # Camera — 0 = first USB camera (/dev/video0). Try 1 if 0 doesn't work.
 CAMERA_DEVICE = 0
