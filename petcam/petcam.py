@@ -234,7 +234,19 @@ def main():
     prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
 
     last_notification = 0
+    analysis_in_progress = threading.Event()
     log.info("Watching for motion...")
+
+    def analyze_and_notify(frame, timestamp):
+        """Run in a background thread — never blocks the capture loop."""
+        description = describe_frame(frame)
+        if not description:
+            log.info("No description returned, skipping notification")
+        else:
+            log.info(f"Description: {description}")
+            if should_notify(description):
+                send_notification(frame, description)
+        analysis_in_progress.clear()
 
     try:
         while True:
@@ -254,7 +266,7 @@ def main():
             prev_gray = curr_gray
 
             if changed_pixels < MOTION_THRESHOLD:
-                time.sleep(0.1)
+                time.sleep(0.05)
                 continue
 
             log.info(f"Motion detected ({changed_pixels} px changed)")
@@ -263,25 +275,21 @@ def main():
             if now - last_notification < COOLDOWN_SECONDS:
                 remaining = int(COOLDOWN_SECONDS - (now - last_notification))
                 log.info(f"Cooldown active — {remaining}s remaining")
-                time.sleep(0.5)
+                time.sleep(0.05)
                 continue
 
-            log.info("Sending frame to moondream2 for analysis...")
-            description = describe_frame(frame)
-
-            if not description:
-                log.info("No description returned, skipping notification")
+            if analysis_in_progress.is_set():
+                log.info("Analysis already in progress — skipping")
+                time.sleep(0.05)
                 continue
 
-            log.info(f"Description: {description}")
+            last_notification = time.time()
+            analysis_in_progress.set()
+            log.info("Sending frame to moondream for analysis (background)...")
+            t = threading.Thread(target=analyze_and_notify, args=(frame.copy(), now), daemon=True)
+            t.start()
 
-            if should_notify(description):
-                send_notification(frame, description)
-                last_notification = time.time()
-            else:
-                log.info("Description didn't match notify keywords — skipping")
-
-            time.sleep(0.1)
+            time.sleep(0.05)
 
     except KeyboardInterrupt:
         log.info("Shutting down petcam.")

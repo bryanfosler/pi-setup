@@ -10,6 +10,17 @@
 ## Connected Devices
 - **CME C2MIDI Pro** — USB MIDI controller, shows as ALSA client 24 (`C2MIDI Pro MIDI 1`)
 
+## Quick Access URLs
+
+| What | Local | Via Tailscale |
+|---|---|---|
+| Open-WebUI (chat) | http://bryanfoslerpi5.local:3000 | http://100.99.74.37:3000 |
+| Petcam viewer | http://bryanfoslerpi5.local:8080 | http://100.99.74.37:8080 |
+| Petcam stream (direct MJPEG) | http://bryanfoslerpi5.local:8080/stream | http://100.99.74.37:8080/stream |
+| Ollama API | http://bryanfoslerpi5.local:11434 | http://100.99.74.37:11434 |
+| ntfy alerts | https://ntfy.sh/bryan-petcam-302 | — |
+| SSH (local) | `ssh bfosler@bryanfoslerpi5.local` | `ssh bfosler@100.99.74.37` |
+
 ## Services
 | Service | Port | Status | Notes |
 |---|---|---|---|
@@ -17,8 +28,8 @@
 | `midi-routing` | — | enabled, auto-start | Waits for Mac connection, then routes bidirectionally |
 | `bt-midi` | BLE | enabled, auto-start | Pi as BLE MIDI peripheral; connects from Audio MIDI Setup → Bluetooth |
 | `ollama` | 11434 | enabled, auto-start | `OLLAMA_HOST=0.0.0.0` override in systemd drop-in |
-| `open-webui` | 3000 | enabled, auto-start | Browser chat UI, Python venv at `/opt/open-webui-venv` |
-| `petcam` | 8080 (stream) | enabled, auto-start | Motion detection + moondream2 + ntfy.sh notifications |
+| `open-webui` | 3000 | enabled, auto-start | Docker container; browser chat UI for Ollama |
+| `petcam` | 8080 (stream) | enabled, auto-start | Motion detection + moondream + ntfy.sh notifications |
 
 ## Connected Devices
 - **CME C2MIDI Pro** — USB MIDI controller, ALSA client 24 (`C2MIDI Pro MIDI 1`)
