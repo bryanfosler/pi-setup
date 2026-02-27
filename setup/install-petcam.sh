@@ -32,8 +32,8 @@ echo "==> Installing Python packages (OpenCV, requests)..."
 sudo $VENV_DIR/bin/pip install opencv-python-headless requests numpy
 
 echo ""
-echo "==> Pulling moondream2 vision model (~1.8GB, may take a few minutes)..."
-ollama pull moondream2
+echo "==> Pulling moondream vision model (~1.8GB, may take a few minutes)..."
+ollama pull moondream
 
 echo ""
 echo "==> Installing petcam script..."

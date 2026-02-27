@@ -34,7 +34,7 @@ COOLDOWN_SECONDS = 60
 
 # Ollama settings
 OLLAMA_URL = "http://localhost:11434"
-VISION_MODEL = "moondream2"
+VISION_MODEL = "moondream"
 VISION_PROMPT = (
     "Describe what you see in this image in one or two sentences. "
     "Specifically mention if there is a pet, dog, cat, or person, and what they are doing."
