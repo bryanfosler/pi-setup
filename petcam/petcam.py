@@ -14,7 +14,7 @@ import requests
 import threading
 import numpy as np
 from datetime import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 # ─── CONFIG ─────────────────────────────────────────────────────────────────
 
@@ -22,8 +22,12 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # Subscribe to this topic in the ntfy iOS app
 NTFY_TOPIC = "bryan-petcam-302"
 
-# Camera — 0 = first USB camera (/dev/video0). Try 1 if 0 doesn't work.
-CAMERA_DEVICE = 0
+# Camera source — either an integer device index (0 = /dev/video0) or a URL.
+# GoPro Hero 12 via USB: set GOPRO_MODE = True and plug in via USB.
+# Regular webcam: set GOPRO_MODE = False, CAMERA_DEVICE = 0.
+GOPRO_MODE = True
+GOPRO_IP = "172.23.194.51"   # GoPro's USB IP (found via scan)
+CAMERA_DEVICE = "udp://@:8554"  # GoPro streams here when in webcam mode
 
 # Motion sensitivity — number of changed pixels to trigger analysis
 # Lower = more sensitive. Start at 5000, tune up if too many false triggers.
@@ -81,7 +85,8 @@ class StreamHandler(BaseHTTPRequestHandler):
         pass  # suppress per-request HTTP logs
 
     def do_GET(self):
-        if self.path == "/stream":
+        path = self.path.split("?")[0]
+        if path == "/stream":
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
             self.end_headers()
@@ -101,24 +106,48 @@ class StreamHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass  # client disconnected
 
-        elif self.path == "/" or self.path == "/index.html":
-            # Simple HTML page with the stream embedded
-            html = f"""<!DOCTYPE html>
+        elif path == "/snapshot":
+            frame = get_latest_frame()
+            if frame is None:
+                self.send_response(503)
+                self.end_headers()
+                return
+            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            jpg = buffer.tobytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(jpg)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(jpg)
+
+        elif path == "/" or path == "/index.html":
+            html = """<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pet Cam</title>
   <style>
-    body {{ margin: 0; background: #111; display: flex; flex-direction: column;
-           align-items: center; justify-content: center; min-height: 100vh; }}
-    img  {{ max-width: 100%; border-radius: 8px; }}
-    p    {{ color: #888; font-family: sans-serif; font-size: 13px; margin-top: 8px; }}
+    body { margin: 0; background: #111; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; min-height: 100vh; }
+    img  { max-width: 100%; border-radius: 8px; }
+    p    { color: #888; font-family: sans-serif; font-size: 13px; margin-top: 8px; }
   </style>
 </head>
 <body>
-  <img src="/stream" alt="Pet cam live feed">
+  <img id="cam" alt="Pet cam live feed">
   <p>bryanfoslerpi5 &mdash; live</p>
+  <script>
+    var img = document.getElementById('cam');
+    function refresh() {
+      var next = new Image();
+      next.onload = function() { img.src = next.src; };
+      next.src = '/snapshot?' + Date.now();
+    }
+    refresh();
+    setInterval(refresh, 500);
+  </script>
 </body>
 </html>"""
             self.send_response(200)
@@ -131,7 +160,7 @@ class StreamHandler(BaseHTTPRequestHandler):
 
 
 def start_stream_server():
-    server = HTTPServer(("0.0.0.0", STREAM_PORT), StreamHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", STREAM_PORT), StreamHandler)
     log.info(f"Live stream → http://bryanfoslerpi5.local:{STREAM_PORT}")
     server.serve_forever()
 
@@ -206,6 +235,35 @@ def detect_motion(prev_frame, curr_frame):
     return cv2.countNonZero(thresh)
 
 
+# ─── GOPRO USB ───────────────────────────────────────────────────────────────
+
+def gopro_start():
+    """Tell the GoPro to start streaming webcam video over USB."""
+    url = f"http://{GOPRO_IP}:8080/gopro/webcam/start"
+    for attempt in range(5):
+        try:
+            r = requests.get(url, timeout=5)
+            data = r.json()
+            if data.get("error", 1) == 0:
+                log.info(f"GoPro webcam started (status={data.get('status')})")
+                return True
+        except Exception as e:
+            log.warning(f"GoPro start attempt {attempt+1} failed: {e}")
+        time.sleep(2)
+    return False
+
+
+def gopro_keepalive():
+    """GoPro stops streaming if it doesn't receive a keepalive every 2.5s."""
+    url = f"http://{GOPRO_IP}:8080/gopro/webcam/keepalive"
+    while True:
+        try:
+            requests.get(url, timeout=2)
+        except Exception:
+            pass
+        time.sleep(2)
+
+
 # ─── MAIN LOOP ────────────────────────────────────────────────────────────────
 
 def main():
@@ -217,13 +275,22 @@ def main():
     stream_thread = threading.Thread(target=start_stream_server, daemon=True)
     stream_thread.start()
 
-    cap = cv2.VideoCapture(CAMERA_DEVICE)
-    if not cap.isOpened():
-        raise RuntimeError(f"Could not open camera device {CAMERA_DEVICE}. "
-                           "Check it's plugged in and try CAMERA_DEVICE = 1.")
+    if GOPRO_MODE:
+        log.info(f"GoPro mode — starting webcam stream from {GOPRO_IP}...")
+        if not gopro_start():
+            raise RuntimeError("Could not start GoPro webcam stream. Is it connected via USB?")
+        keepalive_thread = threading.Thread(target=gopro_keepalive, daemon=True)
+        keepalive_thread.start()
+        time.sleep(1)  # brief pause for stream to stabilise
+        cap = cv2.VideoCapture(CAMERA_DEVICE + "?fifo_size=5000000&overrun_nonfatal=1", cv2.CAP_FFMPEG)
+    else:
+        cap = cv2.VideoCapture(CAMERA_DEVICE)
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open camera source: {CAMERA_DEVICE}")
 
     ret, frame = cap.read()
     if not ret:
