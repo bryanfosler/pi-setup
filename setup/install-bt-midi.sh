@@ -40,12 +40,36 @@ sudo systemctl enable bt-midi.service
 echo "    bt-midi.service enabled"
 
 echo ""
+echo "==> Configuring WirePlumber to not interfere with BLE MIDI..."
+# WirePlumber's spa.bluez5.midi plugin intercepts BLE connections and conflicts
+# with our custom GATT server. Disable it via a config override.
+sudo mkdir -p /etc/wireplumber/wireplumber.conf.d
+sudo tee /etc/wireplumber/wireplumber.conf.d/50-disable-bluetooth-midi.conf > /dev/null <<'WPEOF'
+wireplumber.profiles = {
+  main = {
+    monitor.bluez-midi = disabled
+  }
+}
+WPEOF
+systemctl --user restart wireplumber 2>/dev/null || true
+echo "    Done."
+
+echo ""
+echo "==> Configuring bluez..."
+# Disable bluez built-in MIDI plugin (also conflicts with our GATT server)
+if ! grep -q 'DisablePlugins.*midi' /etc/bluetooth/main.conf 2>/dev/null; then
+  sudo sed -i '/^\[General\]/a DisablePlugins = midi' /etc/bluetooth/main.conf
+fi
+# Keep adapter discoverable indefinitely
+sudo bluetoothctl discoverable-timeout 0
+
+echo ""
 echo "==> Ensuring bluetooth is powered on..."
 sudo systemctl enable bluetooth
 sudo systemctl start bluetooth
-# Give bluez a moment to initialize
 sleep 2
 sudo bluetoothctl power on || true
+sudo bluetoothctl discoverable on || true
 
 echo ""
 echo "==> Starting bt-midi service..."

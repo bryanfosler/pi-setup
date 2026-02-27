@@ -1,3 +1,82 @@
+## Session 7 — BLE MIDI Debugging + Full Working Stack
+
+**Date:** 02.27.2026
+**Time spent:** ~2h
+
+### What We Built
+- Fully working BLE MIDI: Pi visible as "Pi BT MIDI" in Audio MIDI Setup → Bluetooth; Mac GarageBand receives MIDI notes over Bluetooth
+
+### Bugs Fixed
+- **WirePlumber conflict**: `spa.bluez5.midi` plugin intercepts BLE connections and fights our GATT server → fixed by adding `/etc/wireplumber/wireplumber.conf.d/50-disable-bluetooth-midi.conf` to disable `monitor.bluez-midi`
+- **bluez MIDI plugin conflict**: built-in `profiles/midi/midi.c` also intercepts connections → fixed by adding `DisablePlugins = midi` to `/etc/bluetooth/main.conf`
+- **D-Bus threading bug**: `alsa_poll_loop` runs in background thread but called `PropertiesChanged` D-Bus signal directly — dbus-python signals must be emitted from the main GLib thread → fixed with `GLib.idle_add(chrc.notify_midi, data)`
+- Both fixes baked into `install-bt-midi.sh` for clean future deploys
+
+### What Shipped
+- `bt-midi/bt-midi-peripheral.py` — threading fix committed and pushed
+- `setup/install-bt-midi.sh` — WirePlumber + bluez MIDI plugin disable steps added
+
+### Decisions Made
+- WirePlumber BLE MIDI disabled via profile override (not removed — just that component off)
+- discoverable-timeout set to 0 (infinite) in install script so Pi stays visible permanently
+
+---
+
+## Session 6 — ntfy Setup + Open-WebUI + Petcam Topic Fix
+
+**Date:** 02.27.2026
+**Time spent:** ~30m
+
+### What We Did
+- Set up ntfy.sh app on iPhone, subscribed to topic `bryan-petcam-302`
+- Updated `petcam.py` NTFY_TOPIC: `bfosler-petcam1` → `bryan-petcam-302`; restarted petcam service
+- Installed Open-WebUI — Docker image already cached from prior session, container spun up immediately
+- Confirmed all Pi services fully running: Ollama, Open-WebUI, petcam, bt-midi, rtpmidid, Tailscale
+
+### What Shipped
+- Open-WebUI live at `http://bryanfoslerpi5.local:3000`
+- Petcam sending notifications to correct ntfy topic
+- Pi setup fully complete — all scripts from the deployment checklist done
+
+### Bugs Fixed
+- Petcam had stale ntfy topic from earlier dev iteration
+
+### Decisions Made
+- Mac Internet Sharing skipped permanently — Mac is on WiFi so can't also broadcast a WiFi hotspot; iPhone hotspot + Pi hotspot covers all travel scenarios
+
+---
+
+## Session 5 — Full Deployment to Pi
+
+**Date:** 02.26.2026
+**Time spent:** ~1h 30m
+
+### What We Built
+- Deployed all scripts to live Pi for the first time
+- Fixed Open-WebUI install: switched from pip to Docker (Debian Trixie ships Python 3.13; open-webui pip requires <3.13)
+- Fixed moondream model name: `moondream2` → `moondream` in Ollama registry
+- Fixed bt-midi venv creation (needs sudo for /opt)
+- Fixed install-petcam.sh template variable substitution (deployed service directly)
+
+### What Shipped
+- All services running: Ollama, Open-WebUI (Docker), rtpmidid, midi-routing, bt-midi, Tailscale
+- Network priorities set: GilligansIsland=10, iPhone hotspot=5
+- Pi hotspot profile configured (BryanPi5 / 192.168.100.1)
+- Tailscale connected: `100.99.74.37`
+- Petcam ready — blocked on USB webcam not connected
+
+### Bugs Fixed
+- Open-WebUI pip fails on Python 3.13 → Docker workaround
+- `moondream2` not in Ollama registry → correct name is `moondream`
+- bt-midi `/opt/bt-midi-venv` needs sudo to create
+- install-petcam.sh template vars (`__VENV_DIR__` etc.) need substitution before deploy
+
+### Decisions Made
+- Open-WebUI runs as Docker container with `--restart always`; systemd service is a oneshot wrapper (`docker start open-webui`)
+- Mac Internet Sharing skipped — iPhone hotspot + Pi hotspot covers travel scenarios
+
+---
+
 ## Session 4 — BLE MIDI Peripheral + Pi WiFi Hotspot
 
 **Date:** 02.26.2026
