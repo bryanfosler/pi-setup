@@ -1,16 +1,15 @@
 [Unit]
-Description=Open WebUI (Ollama chat interface)
-After=network.target ollama.service
+Description=Open WebUI (Ollama chat interface — Docker container)
+After=docker.service ollama.service
+Requires=docker.service
 Wants=ollama.service
 
 [Service]
-Type=simple
-User=__USER__
-ExecStart=__VENV_DIR__/bin/open-webui serve --host 0.0.0.0 --port __PORT__
-Restart=always
-RestartSec=5
-Environment="DATA_DIR=__DATA_DIR__"
-Environment="OLLAMA_BASE_URL=http://127.0.0.1:11434"
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/docker start open-webui
+ExecStop=/usr/bin/docker stop open-webui
+Restart=no
 
 [Install]
 WantedBy=multi-user.target
