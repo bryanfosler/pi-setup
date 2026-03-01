@@ -387,3 +387,59 @@ sudo systemctl status bt-midi
 bash setup/switch-network.sh hotspot   # enable
 bash setup/switch-network.sh home      # disable
 ```
+
+---
+
+# Bryan Learns: Running an AI Bot on Your Pi (OpenClaw + Telegram)
+
+## The Big Picture
+
+You now have a personal AI assistant — "Piper" — running 24/7 on your Raspberry Pi. It lives in Telegram, responds to your DMs, can read and write your Notion pages, and remembers things across conversations. The Pi handles all the infrastructure; Anthropic's Claude handles the thinking.
+
+## How It Works
+
+Think of it as a chain: **Telegram → Pi → Claude API → back to Telegram**.
+
+When you send Piper a message, Telegram delivers it to a process called the **OpenClaw gateway** running on your Pi. The gateway figures out which AI model to use, sends your message to Anthropic's API, gets a response, and sends it back to you in Telegram. All of this happens in ~1-2 seconds on Haiku.
+
+The Pi doesn't do the AI heavy lifting — it's just the switchboard. The actual intelligence comes from Claude running in Anthropic's cloud.
+
+## Why Haiku as the Default?
+
+Claude comes in three sizes: Haiku (fast, cheap), Sonnet (smart, moderate cost), and Opus (most capable, most expensive). For everyday tasks — "add this to Notion", "what's the weather", "remind me about X" — Haiku is more than capable and costs roughly 20x less than Opus. Sonnet is set as a fallback for when Piper hits something genuinely complex.
+
+You can always change the model: `npx openclaw config set agents.defaults.model.primary anthropic/claude-sonnet-4-6` on the Pi.
+
+## The 401 Problem: A Lesson in API Keys
+
+We hit a wall early on: Piper kept returning 401 errors ("invalid x-api-key"). The tricky part was the key *looked* valid — it was stored in the right file, the config showed it was loaded. But Anthropic was rejecting it.
+
+The root cause: the key was from a test account or had been revoked. The lesson: **when you get a 401 from Anthropic, don't debug the code — generate a fresh key from console.anthropic.com first.** A bad key looks identical to a good one until you actually make an API call.
+
+## The Terminal Paste Problem
+
+Setting keys on the Pi turned into an unexpected adventure. The challenge: you can't paste a secret key into chat (security), but pasting multi-line Python into Warp terminal caused IndentationError because Warp's input editor treats newlines literally.
+
+The solution that worked: Python's `input()` function inside the REPL, which handles long pastes cleanly without bash getting involved. For any future scripting on the Pi where you need to enter secrets, this is the pattern:
+
+```bash
+python3
+>>> key = input('Paste key: ')
+# paste here, press Enter
+>>> # use key...
+```
+
+## Skills: Piper's Superpowers
+
+OpenClaw has a skill system — modular capabilities you add like plugins. Each skill has requirements (usually an API key or CLI tool). The ones enabled for Piper:
+
+- **session-memory** — Piper remembers what you talked about last time
+- **notion** — Piper can read and write your Notion pages (requires your integration secret in the config env block)
+- **obsidian** — available for when/if you use Obsidian vaults
+
+The `npx openclaw skills list` command shows all available skills and which ones are "ready" vs "missing" their requirements.
+
+## User vs System Systemd Services
+
+One gotcha: OpenClaw installs as a *user* systemd service, not a system service. That means `sudo systemctl restart openclaw-gateway` won't work — you need `systemctl --user restart openclaw-gateway` (no sudo). User services run under your account and start when you log in, not at boot (unless you've enabled lingering, which OpenClaw does automatically).
+
