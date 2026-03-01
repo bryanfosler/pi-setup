@@ -31,6 +31,17 @@
 | `ollama` | 11434 | enabled, auto-start | `OLLAMA_HOST=0.0.0.0` override in systemd drop-in |
 | `open-webui` | 3000 | enabled, auto-start | Docker container; browser chat UI for Ollama |
 | `petcam` | 8080 (stream) | enabled, auto-start | Motion detection + moondream + ntfy.sh notifications |
+| `openclaw-gateway` | 18789 (ws) | enabled, **user** systemd | Telegram AI bot (Piper); restart: `systemctl --user restart openclaw-gateway` |
+
+## OpenClaw (Piper) — Telegram AI Bot
+- **Bot:** `@Piper_RPi5Bot`
+- **Config:** `~/.openclaw/openclaw.json`
+- **API key:** `~/.openclaw/agents/main/agent/auth-profiles.json` (profile: `anthropic:manual`)
+- **Model:** `claude-haiku-4-5-20251001` (primary), `claude-sonnet-4-6` (fallback)
+- **Skills:** session-memory, obsidian, notion (requires `NOTION_API_KEY` in config env block)
+- **To replace API key:** `python3` REPL on Pi → `key = input('Paste key: ')` → update auth-profiles.json → restart service
+- **To check logs:** `npx openclaw logs --plain --limit 50`
+- **To verify model:** look for `model=` in `embedded run start` log line
 
 ## Connected Devices
 - **CME C2MIDI Pro** — USB MIDI controller, ALSA client 24 (`C2MIDI Pro MIDI 1`)
