@@ -16,6 +16,7 @@
 |---|---|---|
 | Open-WebUI (chat) | http://bryanfoslerpi5.local:3000 | http://100.99.74.37:3000 |
 | Petcam viewer | http://bryanfoslerpi5.local:8080 | http://100.99.74.37:8080 |
+| Petcam viewer (public, no Tailscale) | — | https://bryanfoslerpi5.taildef31a.ts.net |
 | Petcam stream (direct MJPEG) | http://bryanfoslerpi5.local:8080/stream | http://100.99.74.37:8080/stream |
 | Ollama API | http://bryanfoslerpi5.local:11434 | http://100.99.74.37:11434 |
 | ntfy alerts | https://ntfy.sh/bryan-petcam-302 | — |
@@ -59,6 +60,14 @@ See `docs/full-setup-guide-02.26.2026.md` for full walkthrough.
 - `/usr/local/lib/bt-midi/bt-midi-peripheral.py` — main script
 - `/opt/bt-midi-venv/` — Python venv with python-rtmidi
 - `/etc/systemd/system/bt-midi.service`
+- `/etc/bluetooth/main.conf` — must have `DisablePlugins = midi` (bluez MIDI plugin conflicts with custom GATT)
+- `/etc/wireplumber/wireplumber.conf.d/50-disable-bluetooth-midi.conf` — must disable `monitor.bluez-midi`
+
+## Critical: BLE MIDI Three-Conflict Pattern
+Any custom BLE MIDI GATT server on Linux will hit all three of these:
+1. **bluez MIDI plugin** — `profiles/midi/midi.c` intercepts BLE connections → fix: `DisablePlugins = midi` in `/etc/bluetooth/main.conf`
+2. **WirePlumber** — `spa.bluez5.midi` monitor also intercepts → fix: `monitor.bluez-midi = disabled` in wireplumber conf.d
+3. **D-Bus threading** — dbus-python silently drops signals not emitted from main GLib thread → fix: `GLib.idle_add(chrc.notify_midi, data)` instead of direct call from background thread
 
 ## Critical: rtpmidid --port flag
 rtpmidid v2 does NOT bind to port 5004 unless `--port 5004` is explicitly passed.
@@ -92,4 +101,16 @@ aconnect -l                          # show all ALSA MIDI connections
 sudo ss -ulnp | grep -E '500[45]'   # verify rtpmidid is listening
 journalctl -u rtpmidid -f           # live log (shows ~3-5ms latency when Mac connected)
 sudo systemctl restart rtpmidid     # restart (clears stale ALSA ports)
+```
+
+## Deploying petcam.py Updates
+The service runs from `/usr/local/lib/petcam/petcam.py` (not the repo copy).
+After editing `petcam/petcam.py` in the repo, deploy with:
+```bash
+# From Mac:
+scp petcam/petcam.py bfosler@bryanfoslerpi5.local:~/pi-setup/petcam/petcam.py
+ssh bfosler@bryanfoslerpi5.local "sudo cp ~/pi-setup/petcam/petcam.py /usr/local/lib/petcam/petcam.py && sudo systemctl restart petcam"
+
+# Or from the Pi directly:
+sudo cp ~/pi-setup/petcam/petcam.py /usr/local/lib/petcam/petcam.py && sudo systemctl restart petcam
 ```

@@ -143,6 +143,83 @@ nmcli connection modify home connection.autoconnect-priority 10  # set priority
 
 ---
 
+## The Three-Bug BLE MIDI Debugging Story
+
+Getting BLE MIDI working on the Pi took three separate bug hunts, each one hiding behind the previous. It's a good story about how Linux audio/Bluetooth is genuinely layered — and how to read the breadcrumbs.
+
+### Bug 1: The Connection That Immediately Dropped
+
+First symptom: Audio MIDI Setup showed "Pi BT MIDI", you clicked Connect, and it disappeared. Over and over. No error message — just gone.
+
+The first instinct was to check our custom Python GATT server. But the clue was in the bluez logs:
+
+```
+profiles/midi/midi.c: MIDI I/O: Failed to read initial request
+```
+
+**The culprit:** bluez (the Linux Bluetooth stack) has a **built-in MIDI plugin** (`profiles/midi/midi.c`) that activates the moment any BLE connection comes in. It tries to act as a MIDI client — reading the remote device's MIDI service. But the Mac was connecting as a *client* (looking for a server), not a server, so there was nothing to read. The plugin failed, dropped the connection.
+
+**The fix:** `DisablePlugins = midi` in `/etc/bluetooth/main.conf`. This tells bluez to not load its own MIDI plugin at all, leaving the field clear for our code.
+
+### Bug 2: WirePlumber Doing the Same Thing
+
+After disabling the bluez MIDI plugin, the connection still dropped. Different error this time, buried in the system logs (not the bluetooth service logs):
+
+```
+wireplumber: spa.bluez5.midi: org.bluez.GattCharacteristic1.ReadValue() failed: Timeout was reached
+```
+
+**The culprit:** WirePlumber (the PipeWire session manager that handles audio routing on modern Linux) has its *own* BLE MIDI implementation. It also intercepts every BLE connection and tries to read MIDI services from the connecting device. Same problem, different layer.
+
+WirePlumber's BLE MIDI is designed for the Pi to act as a Central (connecting *to* BLE MIDI instruments like a wireless keyboard). When the Mac shows up as a Central (expecting the Pi to be the Peripheral/server), WirePlumber tries to read from the Mac and times out.
+
+**The fix:** A WirePlumber config override disabling just the BLE MIDI monitor:
+```
+/etc/wireplumber/wireplumber.conf.d/50-disable-bluetooth-midi.conf
+```
+```
+wireplumber.profiles = {
+  main = {
+    monitor.bluez-midi = disabled
+  }
+}
+```
+
+This is surgical — WirePlumber keeps running (it handles all audio routing), just with BLE MIDI disabled.
+
+### Bug 3: The Silent Threading Problem
+
+After both those fixes, the Mac finally stayed connected — `Client subscribed to notifications` appeared in the logs for the first time. But sending test notes produced nothing in GarageBand.
+
+This one was invisible because it produced no error. The code ran, the ALSA poll loop picked up MIDI messages, `notify_midi()` was called — and nothing happened.
+
+**The culprit:** Thread safety with D-Bus. Our ALSA poll loop runs in a background thread. Inside it, we called `self.PropertiesChanged(...)` — a D-Bus signal — directly. But dbus-python signals **must be emitted from the main GLib event loop thread**. Calling them from a background thread silently does nothing. No error, no crash, just silence.
+
+**The fix:** One line change — instead of calling `chrc.notify_midi(data)` directly, schedule it on the main thread:
+```python
+GLib.idle_add(chrc.notify_midi, data)
+```
+
+`GLib.idle_add()` queues a function to run on the main loop the next time it's idle. This is the standard pattern for safely passing work from a background thread to a GLib event loop.
+
+### The Meta-Lesson: Linux Audio/BT Is Deeply Layered
+
+The Pi's Bluetooth stack has at least four players involved in any BLE connection:
+1. **The kernel** — raw HCI packets
+2. **bluez** — manages connections, has its own MIDI plugin
+3. **WirePlumber/PipeWire** — session manager, also does BLE MIDI
+4. **Your code** — GATT server registered via D-Bus
+
+When something goes wrong, it could be any of those layers. The key is knowing what logs each one writes:
+- **bluez:** `journalctl -u bluetooth`
+- **WirePlumber:** `journalctl` (general system log, search for `wireplumber`)
+- **kernel:** `dmesg | grep -i bluetooth`
+- **Your code:** `journalctl -u bt-midi`
+
+Working top-down (our code first) would have taken forever. Working bottom-up (kernel → bluez → WirePlumber → our code) revealed each issue in sequence.
+
+---
+
 ## Ollama: Running AI Models Locally
 
 Ollama is a tool that lets you download and run large language models (LLMs) on your own hardware — no internet required once the model is downloaded, no API costs, no data leaving your network.
