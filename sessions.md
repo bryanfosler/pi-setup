@@ -1,3 +1,89 @@
+## Session 10 — OpenClaw (Piper) Telegram AI Bot
+
+**Date:** 03.01.2026
+**Time spent:** ~2h 30m
+
+### What We Built
+- OpenClaw gateway running as `openclaw-gateway` user systemd service
+- Telegram bot `@Piper_RPi5Bot` connected and responding
+- Notion integration (internal, read/write/insert) connected to Pi todo page
+- Session-memory skill enabled for cross-conversation context
+
+### What Shipped
+- Piper responds to DMs in Telegram using Claude Haiku (Sonnet fallback)
+- Notion pages writable from Telegram ("add a todo: X")
+- Gateway auto-starts on boot via systemd user service
+
+### Bugs Fixed
+- 401 auth errors — old invalid Anthropic API key in auth-profiles.json; fixed by generating new key and writing via Python REPL `input()` prompt on Pi
+- `systemctl restart openclaw` failed — correct service name is `openclaw-gateway`
+- Warp terminal indentation — Python REPL and multi-line pastes cause IndentationError; workaround: use `input()` for key capture, or heredoc to write script file
+
+### Decisions Made
+- Haiku as primary model (cost), Sonnet as fallback (reasoning)
+- Notion integration scoped to internal only (no OAuth app needed)
+- Notion capabilities: read/write/insert content only; no comments or user info
+- API keys stored in macOS Keychain Access going forward
+
+## Session 9 — Remote Access, Auth & Stream Latency Fix
+
+**Date:** 02.28.2026
+**Time spent:** ~1h
+
+### What We Built
+- HTTP Basic Auth on all petcam routes (`GilligansIsland` / `Gilly1127`)
+- Tailscale Funnel — public HTTPS URL, no Tailscale needed for viewer
+- Shutdown button on web page (red, confirm dialog, POST `/shutdown` → `sudo shutdown -h now`)
+- Passwordless sudo rule for petcam user: `/etc/sudoers.d/petcam-shutdown`
+- `credentials.local.md` — gitignored local file with all Pi credentials
+
+### What Shipped
+- `https://bryanfoslerpi5.taildef31a.ts.net` — shareable link for wife, password protected
+- Shutdown button accessible from any browser, anywhere
+- 75-90 second stream delay reduced to ~1-2 seconds
+
+### Bugs Fixed
+- **75-90s live feed delay** — root cause: main loop read frames at 20fps but GoPro buffers at higher rate, causing frames to pile up in FFmpeg's FIFO. Fix: dedicated capture thread that drains the buffer as fast as possible (no sleep), main loop reads from shared latest frame. Also reduced `fifo_size` from 5MB → 64KB.
+- MJPEG stream (`/stream`) caused stuck/looping video through Tailscale Funnel — HTTPS proxies buffer multipart responses. Fix: chained fetch of `/snapshot` (individual JPEG requests proxy cleanly, no buffering)
+
+### Decisions Made
+- Basic auth over HTTPS is sufficient for petcam — keeps honest people out, browser saves credentials after first entry
+- Tailscale Funnel chosen over Cloudflare Tunnel (already had Tailscale) and router port forwarding (security concern)
+- Funnel config is persistent (stored by tailscaled), survives reboots automatically
+
+---
+
+## Session 8 — GoPro Hero 12 USB + Petcam Live Stream
+
+**Date:** 02.27.2026
+**Time spent:** ~2h
+
+### What We Built
+- GoPro Hero 12 connected via USB as petcam source (1080p vs 640x480 webcam — massive quality improvement)
+- GoPro connects via USB CDC NCM driver → eth1 at 172.23.194.51
+- `gopro_start()` — HTTP call to GoPro API on startup to begin webcam stream
+- `gopro_keepalive()` — background thread pinging GoPro every 2s (required or stream drops)
+- Fixed petcam live stream viewer — multiple bugs uncovered and fixed
+
+### Bugs Fixed
+- **HTTPServer single-threaded**: `/stream` endpoint's infinite loop blocked all other requests → switched to `ThreadingHTTPServer`
+- **Safari MJPEG**: `<img src="/stream">` doesn't update in Safari → replaced with JS snapshot polling every 500ms
+- **Query string mismatch**: JS requests `/snapshot?timestamp` but handler checked `self.path == "/snapshot"` → strip query string with `split("?")[0]`
+- **Ollama blocking capture loop**: `describe_frame()` blocks 30s on timeout → offloaded to background thread
+- **Wrong deploy target**: edits to `~/pi-setup/petcam/petcam.py` didn't take effect — service runs `/usr/local/lib/petcam/petcam.py`
+- **GoPro IP not .1**: GoPro ignores ICMP but responds to HTTP; found at 172.23.194.51 via HTTP scan
+
+### What Shipped
+- `petcam/petcam.py` — all fixes committed and pushed
+- CLAUDE.md updated with deploy command for petcam updates
+
+### Decisions Made
+- `GOPRO_MODE = True` flag in petcam.py config; webcam fallback still supported with `GOPRO_MODE = False`
+- GoPro IP hardcoded as `172.23.194.51` — consistent since GoPro is the DHCP server
+- Next session: remote live stream access (Tailscale already installed — just needs port forwarding or direct Tailscale URL)
+
+---
+
 ## Session 7 — BLE MIDI Debugging + Full Working Stack
 
 **Date:** 02.27.2026
