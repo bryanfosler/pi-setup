@@ -1,3 +1,32 @@
+## Session 11 — Homebridge + Google Nest HomeKit Bridge
+
+**Date:** 03.01.2026
+**Time spent:** ~1h 30m
+
+### What We Built
+- Homebridge running on Pi 5 via Docker (`ghcr.io/homebridge/homebridge:latest`)
+- `homebridge-nest-accfactory@0.3.9` plugin — bridges Google Nest devices to HomeKit without the $5 Google SDM fee
+- Google account auth via Safari cookie extraction (issueToken + full cookie string)
+- Apple TV HD configured as Home Hub for remote access
+
+### What Shipped
+- Nest Learning Thermostat (3rd gen) visible in iPhone Home app as "Entryway"
+- Nest Doorbell (wired) visible in Home app as "Front Door"
+- Siri thermostat control and remote access working via Apple TV hub
+
+### Bugs Fixed
+- Plugin not loading — installed to global npm path, must use `--prefix /var/lib/homebridge` instead
+- Config rejected with "No connections specified" — wrong key names: `googleAuth` → `google`, `issueToken` → `issuetoken`, `cookies` → `cookie`
+- issueToken not appearing in Chrome — must use Safari (ITP blocks the iframerpc request in other browsers)
+
+### Decisions Made
+- Cookie-based auth (no $5 SDM fee) — try it free first; pay only if it breaks and stays broken
+- Docker install with `--net=host` required for mDNS/HomeKit discovery
+- Plugin path: `/var/lib/homebridge/node_modules` (not global npm)
+- Do NOT log out of home.nest.com — invalidates auth tokens
+
+---
+
 ## Session 10 — OpenClaw (Piper) Telegram AI Bot
 
 **Date:** 03.01.2026

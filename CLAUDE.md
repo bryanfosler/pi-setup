@@ -19,6 +19,7 @@
 | Petcam viewer (public, no Tailscale) | — | https://bryanfoslerpi5.taildef31a.ts.net |
 | Petcam stream (direct MJPEG) | http://bryanfoslerpi5.local:8080/stream | http://100.99.74.37:8080/stream |
 | Ollama API | http://bryanfoslerpi5.local:11434 | http://100.99.74.37:11434 |
+| Homebridge UI | http://bryanfoslerpi5.local:8581 | http://100.99.74.37:8581 |
 | ntfy alerts | https://ntfy.sh/bryan-petcam-302 | — |
 | SSH (local) | `ssh bfosler@bryanfoslerpi5.local` | `ssh bfosler@100.99.74.37` |
 
@@ -32,6 +33,7 @@
 | `open-webui` | 3000 | enabled, auto-start | Docker container; browser chat UI for Ollama |
 | `petcam` | 8080 (stream) | enabled, auto-start | Motion detection + moondream + ntfy.sh notifications |
 | `openclaw-gateway` | 18789 (ws) | enabled, **user** systemd | Telegram AI bot (Piper); restart: `systemctl --user restart openclaw-gateway` |
+| `homebridge` | 8581 (UI), 51732 (HAP) | Docker, `--restart=unless-stopped` | HomeKit bridge; config at `/opt/homebridge/config.json` |
 
 ## OpenClaw (Piper) — Telegram AI Bot
 - **Bot:** `@Piper_RPi5Bot`
