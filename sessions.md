@@ -1,3 +1,57 @@
+## Session 14 — Strava API Integration for Piper
+
+**Date:** 03.03.2026
+**Time spent:** ~1h 30m
+
+### What We Built
+- Strava skill for Piper (`~/.openclaw/workspace/skills/strava/`) — running + cycling activity analysis via Strava API
+- `strava_refresh.py` helper script: handles Strava's 6h OAuth token expiry using stored refresh token
+- SKILL.md with 9 query workflows: recent activities, weekly volume, monthly comparison, pace trend, long run progression, cycling volume + climbing, PRs, athlete stats, and AI coaching analysis
+- Auto-Obsidian logging: every weekly summary writes to `~/ObsidianVault/AI Knowledge/Training/YYYY-WW.md` and syncs to Mac via Syncthing
+
+### What Shipped
+- Skill deployed and live on Pi — Piper can now answer training questions in Telegram
+- Token refresh confirmed working (tested on Pi)
+- 4 Strava credentials stored in `openclaw.json` env block
+- `~/ObsidianVault/AI Knowledge/Training/` folder created on Pi
+
+### Bugs Fixed
+- Reused existing Strava credentials from run-route-generator project — skipped OAuth setup entirely
+
+### Decisions Made
+- Strava API as single source of truth (no local data cache)
+- Obsidian Training folder for auto-logging weekly summaries (separate from existing `AI Knowledge/Piper/` logs)
+- Token refresh via Python stdlib script (no pip deps) — cleaner than inline curl chain in SKILL.md
+- Obsidian logging triggered by Piper's weekly analysis (no cron job)
+
+---
+
+## Session 13 — Claude Code Obsidian Commands + Stop Hook Logging
+
+**Date:** 03.03.2026
+**Time spent:** ~45m
+
+### What We Built
+- `/context` command (`~/.claude/commands/context.md`) — reads full vault at session start, outputs structured briefing: active projects, priorities, recent CC sessions, Piper highlights, decisions log, carry-overs
+- `/closeday` command (`~/.claude/commands/closeday.md`) — end-of-day synthesis; reads today's CC log + Piper summary → writes `Daily/YYYY-MM-DD.md`
+- Obsidian logging in Stop hook: always-on (no `CLAUDE_VOICE` required), appends `### HH:MM — project` breadcrumb to `AI Knowledge/Claude Code/YYYY-MM-DD.md` after every response
+- Created `~/.claude/commands/` directory — native CC slash commands (distinct from `~/.claude/skills/`)
+
+### What Shipped
+- Both commands live and discoverable in Claude Code command palette
+- Stop hook confirmed working: created today's CC log during session
+- `AI Knowledge/Claude Code/2026-03-03.md` created automatically
+
+### Bugs Fixed
+- Stop hook had early CLAUDE_VOICE guard that would have skipped Obsidian logging when TTS off — restructured flow so logging always runs, TTS remains opt-in
+
+### Decisions Made
+- `/today` deferred — needs daily note writing habit + calendar integration first
+- Native `~/.claude/commands/` for prompt-style slash commands; `~/.claude/skills/` reserved for procedural SKILL.md skills using the Skill tool
+- `/closeday` is the reflective counterpart to `/wrap-up` — wrap-up ships work to GitHub/Notion, closeday captures it to Obsidian for future self
+
+---
+
 ## Session 12 — Piper Logging, Security Hardening, Notion Sprint Board & Obsidian Vault
 
 **Date:** 03.02.2026
