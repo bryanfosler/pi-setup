@@ -1,3 +1,40 @@
+## Session 12 — Piper Logging, Security Hardening, Notion Sprint Board & Obsidian Vault
+
+**Date:** 03.02.2026
+**Time spent:** ~2h 30m
+
+### What We Built
+- Piper logger daemon (`piper_logger.py`): polls OpenClaw session JSONL files every 15s, indexes messages/sessions/errors into SQLite (`piper_logs.db`)
+- `piper-logger.service`: user systemd service, auto-starts on boot
+- Piper Notion writer (`piper_notion.py`): `--status`, `--errors`, `--summary`, `--force` — posts to Notion and writes daily markdown to Obsidian vault
+- Cron jobs: daily summary at 23:30, error sync hourly
+- Obsidian vault (`~/Documents/ObsidianVault/`) created on Mac; Pi vault at `~/ObsidianVault/`
+- Syncthing configured and paired on both Pi and Mac — vault syncs over local network
+- Notion sprint board: all 5 repos updated (statusMap `Open` → `Backlog`, `Source: Claude Code` added)
+- 8 Notion backlog cards created (security assessment, Discord, Obsidian CC logging, skills deep dive, OpenClaw config, Piper tools, vector memory, FastAPI gateway)
+
+### What Shipped
+- Piper daily summaries appear in Obsidian vault (AI Knowledge/Piper/YYYY-MM-DD.md) and Notion
+- Piper errors sync to Notion backlog hourly
+- Sprint board live with Backlog/Ready/In Progress/Blocked/Done columns
+- Security hardening applied: UFW rules, SSH password auth off, Ollama localhost-only, rpcbind disabled
+
+### Bugs Fixed
+- SSH to `bryanfoslerpi5.local` failing (Undefined error: 0) → switched to Tailscale IP `100.99.74.37`
+- Host key verification failed → `ssh-keygen -R 100.99.74.37`
+- SSH password auth `sed` missed commented-out line → targeted line 57 directly
+- Python heredoc over SSH failing with nested quotes → Write file locally + pipe via SSH stdin
+- Syncthing restart 405 error → used `/rest/system/restart` POST instead
+- Notion 404 on Pi API calls → "Piper OpenClaw" integration needed DB sharing step in Notion UI
+
+### Decisions Made
+- Separate Notion integration for Pi ("Piper OpenClaw") vs Mac ("Claude Code") — good security boundaries
+- Obsidian vault folder structure: `AI Knowledge/{Claude Code,Piper,Decisions}`, `Projects/`, `Daily/`
+- Source tagging: `OpenClaw` for Pi-generated items, `Claude Code` for GitHub-synced items, `Manual` for user-added
+- Reviewed Obsidian + Claude Codebook PDF (12 slash commands) — `/context`, `/today`, `/closeday` are top priorities to build
+
+---
+
 ## Session 11 — Homebridge + Google Nest HomeKit Bridge
 
 **Date:** 03.01.2026

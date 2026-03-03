@@ -29,10 +29,11 @@
 | `rtpmidid` | UDP 5004/5005 | enabled, auto-start | Must use `--port 5004` flag or it won't bind |
 | `midi-routing` | — | enabled, auto-start | Waits for Mac connection, then routes bidirectionally |
 | `bt-midi` | BLE | enabled, auto-start | Pi as BLE MIDI peripheral; connects from Audio MIDI Setup → Bluetooth |
-| `ollama` | 11434 | enabled, auto-start | `OLLAMA_HOST=0.0.0.0` override in systemd drop-in |
+| `ollama` | 11434 | enabled, auto-start | Restricted to `127.0.0.1:11434` — override in `/etc/systemd/system/ollama.service.d/override.conf` |
 | `open-webui` | 3000 | enabled, auto-start | Docker container; browser chat UI for Ollama |
 | `petcam` | 8080 (stream) | enabled, auto-start | Motion detection + moondream + ntfy.sh notifications |
 | `openclaw-gateway` | 18789 (ws) | enabled, **user** systemd | Telegram AI bot (Piper); restart: `systemctl --user restart openclaw-gateway` |
+| `piper-logger` | — | enabled, **user** systemd | Polls OpenClaw session JSONL files → SQLite `~/.openclaw/piper_logs.db` |
 | `homebridge` | 8581 (UI), 51732 (HAP) | Docker, `--restart=unless-stopped` | HomeKit bridge; config at `/opt/homebridge/config.json` |
 
 ## OpenClaw (Piper) — Telegram AI Bot
@@ -44,6 +45,25 @@
 - **To replace API key:** `python3` REPL on Pi → `key = input('Paste key: ')` → update auth-profiles.json → restart service
 - **To check logs:** `npx openclaw logs --plain --limit 50`
 - **To verify model:** look for `model=` in `embedded run start` log line
+
+## Piper Logging Stack
+- **Logger:** `~/.openclaw/piper_logger.py` — polls `~/.openclaw/agents/main/sessions/*.jsonl` every 15s
+- **DB:** `~/.openclaw/piper_logs.db` (tables: messages, sessions, errors)
+- **Notion writer:** `~/.openclaw/piper_notion.py --summary | --errors | --status | --force`
+- **Cron:** daily summary at 23:30, error sync hourly
+- **Notion integration:** "Piper OpenClaw" (separate from Claude Code integration)
+- **Obsidian output:** `~/ObsidianVault/AI Knowledge/Piper/YYYY-MM-DD.md` → syncs to Mac via Syncthing
+
+## Security Hardening (applied 2026-03-02)
+- UFW: default deny-incoming; allow SSH (22), Tailscale (41641/udp), HAP (51732 local), petcam (8080 local), Open-WebUI/Homebridge (Tailscale-only)
+- SSH: `PasswordAuthentication no` (line 57 of `/etc/ssh/sshd_config`)
+- Ollama: `127.0.0.1:11434` only — NOT accessible from LAN (use Tailscale if needed remotely)
+- rpcbind: disabled (service + socket)
+
+## SSH Troubleshooting
+- `bryanfoslerpi5.local` mDNS sometimes fails → fall back to Tailscale IP `100.99.74.37`
+- Host key error after IP change: `ssh-keygen -R 100.99.74.37`
+- Multi-line Python scripts over SSH: write locally with Write tool, pipe with `ssh host "cat > /remote/path" < /local/file`
 
 ## Connected Devices
 - **CME C2MIDI Pro** — USB MIDI controller, ALSA client 24 (`C2MIDI Pro MIDI 1`)
