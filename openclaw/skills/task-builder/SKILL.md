@@ -1,10 +1,21 @@
 ---
-emoji: ✅
-requires:
-  env:
-    - NOTION_API_KEY
-    - ANTHROPIC_API_KEY
-primaryEnv: ANTHROPIC_API_KEY
+name: task-builder
+description: >
+  Create structured Notion tasks from Telegram or Discord messages. Acts as a
+  writing coach — asks one clarifying question at a time to fill in project,
+  priority, deadline, and notes before creating the task. Use when Bryan says
+  "task:", "add a task", "create a task", "new task", "remind me to",
+  "I need to", "we should", "don't let me forget", "track this", or
+  "backlog:". Never creates without confirmation.
+metadata:
+  {
+    "openclaw": {
+      "emoji": "✅",
+      "requires": {
+        "bins": ["python3"]
+      }
+    }
+  }
 ---
 
 # Task Builder — Notion Writing Coach
