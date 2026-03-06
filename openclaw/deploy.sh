@@ -25,7 +25,9 @@ for arg in "$@"; do
   esac
 done
 
-RSYNC_FLAGS=(-avz --delete --exclude="__pycache__" --exclude="*.pyc" --exclude=".DS_Store")
+RSYNC_FLAGS=(-avz --exclude="__pycache__" --exclude="*.pyc" --exclude=".DS_Store")
+# NOTE: --delete intentionally omitted. Deploy is additive-only.
+# Skills on the Pi that aren't in this repo will not be touched.
 [[ $DRY_RUN -eq 1 ]] && RSYNC_FLAGS+=(--dry-run)
 
 echo "==> Deploying to $PI_HOST:$PI_WORKSPACE"
