@@ -1,3 +1,34 @@
+## Session 15 — Hybrid Local AI Architecture for Piper
+
+**Date:** 03.05.2026
+**Time spent:** ~1h 30m
+
+### What We Built
+- Designed hybrid AI architecture: Qwen2.5-1.5B local model + Haiku API + Sonnet escalation
+- Fixed the root cause of Ollama OOM: OpenClaw reads `contextWindow` from `models.json` and passes it directly as `num_ctx` — all llama models had 131072, causing 15.9GB allocation. Capped to 4096.
+- Added `OLLAMA_KEEP_ALIVE=5m` and `MemoryMax=3G` to the Ollama systemd service override
+- Pulled Qwen2.5-1.5B-Q4_K_M (986MB, ~1.4GB runtime, 0.6s warm latency)
+- Added Qwen2.5 to `models.json` with `contextWindow: 4096`
+- Built `local-infer` OpenClaw skill with circuit breaker: classifies/extracts/summarizes via local model; falls back to API after 3 failures; auto-resets after 30 min
+- Debugged OpenClaw skill snapshot versioning: skills added after gateway startup require a `touch SKILL.md` to trigger file watcher and bump snapshot version
+
+### What Shipped
+- Local inference working: `llama3.2:1b` and `qwen2.5:1.5b-instruct-q4_K_M` both run at 4096 ctx
+- `local-infer` skill live and visible to Piper agent — confirmed via `openclaw agent --agent main`
+- Circuit breaker state file: `~/.openclaw/local-infer-state.json`
+- Ollama service override: `/etc/systemd/system/ollama.service.d/override.conf`
+
+### Bugs Fixed
+- Ollama OOM fixed by capping `contextWindow` in `models.json` (was 131072 → 4096)
+- OpenClaw skill not appearing in agent: required `touch SKILL.md` after gateway start to bump snapshot version counter from 0 to >0
+
+### Decisions Made
+- Use rule-based routing (not LLM-as-router) — faster, deterministic, zero RAM overhead
+- One local model (Qwen2.5-1.5B) committed to; no hot-swappable second tier
+- Defer RAG (chroma + sentence-transformers) until a concrete retrieval gap exists
+- Sonnet escalation is explicit-only (never automatic) to keep costs predictable
+- No proxy shim needed — OpenClaw exposes `contextWindow` in `models.json` as a direct fix point
+
 ## Session 14 — Strava API Integration for Piper
 
 **Date:** 03.03.2026
@@ -387,3 +418,32 @@
 ### Decisions Made
 - Use rtpmidid (built from source) over raveloxmidi — simpler build, cleaner systemd integration
 - Bidirectional routing so CME controller can send to Mac AND Mac can send to CME
+
+## Session 15 — OpenClaw 3.2 Upgrade Recovery
+
+**Date:** 03.05.2026
+**Time spent:** ~2h
+
+### What We Built
+- Re-established all OpenClaw channels after upgrade broke them
+- Security lockdown: Discord + Telegram scoped to Bryan's user IDs only
+- Guild-level `requireMention: false` so Bryan can chat in Discord channels without tagging @Piper
+
+### What Shipped
+- OpenClaw back to fully operational: Telegram ✅, Discord DM ✅, Discord server channels ✅, WebUI ✅
+- Model: Anthropic Haiku (local LLM deferred — Pi5 CPU + RAM insufficient)
+- Gateway accessible over LAN (`bind: lan`)
+
+### Bugs Fixed
+- **Plugin system (3.2 breaking change)** — all channel adapters disabled by default; fixed with `openclaw plugins enable telegram/discord`
+- **Broken systemd override** — missing `[` before `Service]`, silently ignored by systemd; deleted it
+- **Gateway loopback-only** — changed `gateway.bind` from `loopback` to `lan`
+- **Channel tokens wiped** — upgrade cleared Telegram and Discord tokens from config; re-added
+- **Discord `dmPolicy: open` crash** — requires `"*"` in allowFrom; changed to `allowlist`
+- **Ollama OOM** — Pi5 (7.4GB RAM) can't run llama3.2:1b because OpenClaw passes architecture `context_length: 131072` regardless of modelfile PARAMETER overrides (needs 15.9GB)
+- **Discord server channels not receiving messages** — `groupPolicy: open` + `requireMention: false` per guild
+
+### Decisions Made
+- Local LLM abandoned for now: Pi5 CPU inference takes 2-4 min per response; not viable for chat
+- Anthropic Haiku as permanent model until Pi5 gets GPU or we move to a faster device
+- `allowFrom` locked to Bryan's IDs only; add more users manually when ready

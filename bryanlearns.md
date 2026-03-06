@@ -1,5 +1,37 @@
 # Bryan Learns: Headless Pi MIDI
 
+---
+
+## The Snapshot Version Trap (OpenClaw Skill Discovery)
+
+Here's a subtle one that cost us a good chunk of debugging time.
+
+When OpenClaw's gateway starts up, it scans the `~/.openclaw/workspace/skills/` directory and builds a "snapshot" of all available skills. This snapshot gets stored in each session's JSON with a **version number**. The version starts at 0.
+
+When a file in the skills directory changes, a filesystem watcher increments the version counter to 1, 2, 3... The gateway then compares: "Does the session's cached snapshot have a version lower than the current counter?" If yes, it refreshes. If not, it reuses the old snapshot.
+
+The trap: **if you add a new skill after the gateway starts, and then restart the gateway, the version counter resets to 0.** The old cached sessions also have version 0 in their snapshot. So 0 ≥ 0 — no refresh triggered. The new skill never appears.
+
+The fix is stupidly simple: `touch ~/.openclaw/workspace/skills/local-infer/SKILL.md` after the gateway is running. The file watcher fires, bumps the counter to 1, and all sessions get a fresh snapshot on the next message.
+
+**Lesson:** if you ever add a skill and it doesn't show up even after a restart, just `touch` its SKILL.md.
+
+---
+
+## How OpenClaw Passes Context Window Size to Ollama
+
+This was the root cause of the Ollama OOM crashes. You'd try to load `llama3.2:1b` (a 1.3GB model!) and the Pi would run out of memory. But why? It's a *1B parameter* model — should fit easily.
+
+The answer is context window size. When you run an LLM locally, you allocate memory not just for the weights but for the **KV cache** — a chunk of memory that stores all the token computations from the current conversation. A context window of 131,072 tokens needs roughly 14GB of KV cache. The model weights themselves are only 1.3GB, but the KV cache makes the total ~15.9GB.
+
+So how did a 1.3GB model need 15.9GB? OpenClaw reads `contextWindow` from `models.json` and passes it directly as `num_ctx` (the Ollama parameter that controls KV cache size). Every llama model in models.json had `"contextWindow": 131072` — which is the model's *declared maximum*, not a practical default.
+
+The fix: edit `models.json` and change `"contextWindow": 131072` to `"contextWindow": 4096`. Now Ollama allocates a 4096-token KV cache (~1.4GB total) and everything fits in RAM. One JSON edit. No proxy needed, no custom modelfiles.
+
+**The general principle:** the memory a local model uses isn't just its weight file. It's weights + KV cache. KV cache scales linearly with context window size. At 4096 tokens, llama3.2:1b uses ~1.4GB. At 131072 tokens, it needs ~15.9GB. Always check what num_ctx you're actually sending.
+
+---
+
 ## The Big Picture
 
 You want to play your CME keyboard (connected to the Pi via USB) and have the MIDI notes show up on your Mac — wirelessly, over your home network — so you can use it in GarageBand, Logic, or anything else. The Pi acts as a bridge: keyboard plugs into Pi, Pi talks to Mac over WiFi using a protocol called **rtpMIDI** (also called Apple Network MIDI).
@@ -443,3 +475,59 @@ The `npx openclaw skills list` command shows all available skills and which ones
 
 One gotcha: OpenClaw installs as a *user* systemd service, not a system service. That means `sudo systemctl restart openclaw-gateway` won't work — you need `systemctl --user restart openclaw-gateway` (no sudo). User services run under your account and start when you log in, not at boot (unless you've enabled lingering, which OpenClaw does automatically).
 
+
+---
+
+## The OpenClaw 3.2 Upgrade Disaster (And What We Learned)
+
+This session was a good reminder that upgrading software without reading the changelog is like updating your iPhone and then wondering why all your apps moved. OpenClaw 3.2 had multiple silent breaking changes that caused everything to stop working at once — which made it feel catastrophic even though each fix was simple once found.
+
+### Breaking Change #1: Plugins Don't Auto-Enable Anymore
+
+In older OpenClaw, if you had a Telegram or Discord token configured, the channel adapter would just... work. In 3.2, all channel adapters ship *disabled by default*. They've been moved to a plugin system.
+
+The symptom was "Unknown channel: telegram" even with a valid token in the config. The fix was just:
+```bash
+npx openclaw plugins enable telegram
+npx openclaw plugins enable discord
+```
+
+**Lesson:** Whenever a major version upgrade breaks things across the board, check if the software restructured how features are activated before digging into credentials and networking.
+
+### Breaking Change #2: Upgrade Wiped the Channel Tokens
+
+The upgrade also cleared the Telegram and Discord bot tokens from `openclaw.json`. No warning, no migration. Gone. Had to re-add both.
+
+**Lesson:** Always export or back up app configs before upgrading software that stores auth tokens. A quick `cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.bak` would have made this a 30-second fix.
+
+### The Silent Systemd Override
+
+OpenClaw's systemd service had a broken drop-in override file (`override.conf`). The file was missing the `[` before `Service]` — so it read `Service]` instead of `[Service]`. Systemd silently ignored the whole file rather than erroring, which means we thought there was a functional override when there wasn't one.
+
+This caused the gateway to bind to loopback-only (127.0.0.1), which meant the WebUI couldn't connect from the Mac. Fix: delete the broken override, set `gateway.bind: "lan"` directly in `openclaw.json`.
+
+**Lesson:** Systemd drop-in files fail silently on syntax errors. If a service isn't behaving the way its config says it should, check the override files — and validate them with `systemd-analyze verify`.
+
+### The Ollama Memory Trap
+
+The plan was to stop using the Anthropic API and run local LLMs on the Pi to save money. Makes sense, right? Pi5 with 8GB RAM, llama3.2:1b is a tiny 1-billion parameter model — should fit easily.
+
+It didn't. OpenClaw reads the model's architecture metadata from Ollama, finds `context_length: 131072` (the max context the architecture *supports*), and passes that as the `num_ctx` parameter when loading the model. This means Ollama tries to allocate memory for 131,000 tokens of context, even if you add `PARAMETER num_ctx 4096` to a custom modelfile — OpenClaw overrides it.
+
+Result: "model requires more system memory (15.9 GiB) than is available (7.4 GiB)."
+
+Even if we'd gotten past the memory issue, Pi5 CPU inference takes 2-4 minutes per response. That's not a chat assistant — that's a very slow email.
+
+**Lesson:** Local LLMs need RAM proportional to context window × precision, not just model parameters. A "1B parameter" model with a 128K context window is not small. Pi5 CPU inference is fine for batch tasks but terrible for interactive chat. For Piper to feel snappy, it needs either a GPU or to use a hosted API.
+
+### Discord's `dmPolicy: "open"` Crash
+
+Setting `dmPolicy` to `"open"` on the Discord channel caused the gateway to crash on startup. The reason: `open` policy means "anyone can message me" — but OpenClaw still validates the `allowFrom` list to have at least one wildcard entry (`"*"`) when in open mode. Without it, the configuration is considered invalid.
+
+The fix was using `allowlist` + adding `"*"` to `allowFrom` for the use cases where we want open access. Counterintuitive naming, but logical once you understand the model.
+
+### The Real Root Cause: Upgrade Without a Migration Guide
+
+All five of these issues happened in the same session because there was no migration path documented. The upgrade script just replaced the binary and moved on. When you're running a homelab AI assistant that touches multiple integrations (Telegram, Discord, WebUI, Ollama, Anthropic), "silent breaking changes × 5" adds up fast.
+
+Going forward: treat OpenClaw upgrades like a database migration — make a backup, read the release notes, test channels one at a time after upgrading.
