@@ -1,0 +1,12 @@
+[Unit]
+Description=Petcam control server (HTTP API to start/stop petcam)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/petcam/petcam-control.py
+Restart=always
+RestartSec=5
+User=bfosler
+
+[Install]
+WantedBy=multi-user.target

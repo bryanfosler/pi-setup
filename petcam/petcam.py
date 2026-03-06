@@ -7,10 +7,12 @@ Also serves a live MJPEG stream at http://bryanfoslerpi5.local:8080/stream
 """
 
 import cv2
+import os
 import base64
 import time
 import logging
 import requests
+import subprocess
 import threading
 import numpy as np
 from datetime import datetime
@@ -51,6 +53,10 @@ NOTIFY_KEYWORDS = ["dog", "cat", "pet", "animal", "person", "someone"]
 # Live stream port — view at http://bryanfoslerpi5.local:8080/stream
 STREAM_PORT = 8080
 
+# Basic auth credentials — required to view the stream remotely
+STREAM_USERNAME = os.environ.get("PETCAM_USERNAME", "")
+STREAM_PASSWORD = os.environ.get("PETCAM_PASSWORD", "")
+
 # ─── LOGGING ─────────────────────────────────────────────────────────────────
 
 logging.basicConfig(
@@ -84,7 +90,31 @@ class StreamHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # suppress per-request HTTP logs
 
+    def _send_auth_required(self):
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Pet Cam"')
+        self.send_header("Content-Type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"Authentication required")
+
+    def _check_auth(self):
+        auth = self.headers.get("Authorization", "")
+        if not auth.startswith("Basic "):
+            self._send_auth_required()
+            return False
+        try:
+            credentials = base64.b64decode(auth[6:]).decode("utf-8")
+            username, password = credentials.split(":", 1)
+            if username == STREAM_USERNAME and password == STREAM_PASSWORD:
+                return True
+        except Exception:
+            pass
+        self._send_auth_required()
+        return False
+
     def do_GET(self):
+        if not self._check_auth():
+            return
         path = self.path.split("?")[0]
         if path == "/stream":
             self.send_response(200)
@@ -133,20 +163,48 @@ class StreamHandler(BaseHTTPRequestHandler):
            align-items: center; justify-content: center; min-height: 100vh; }
     img  { max-width: 100%; border-radius: 8px; }
     p    { color: #888; font-family: sans-serif; font-size: 13px; margin-top: 8px; }
+    button { margin-top: 16px; padding: 8px 20px; background: #8b0000; color: #fff;
+             border: none; border-radius: 6px; font-family: sans-serif; font-size: 13px;
+             cursor: pointer; }
+    button:hover { background: #b00000; }
+    #msg { color: #f88; font-family: sans-serif; font-size: 13px; margin-top: 8px; }
   </style>
 </head>
 <body>
   <img id="cam" alt="Pet cam live feed">
   <p>bryanfoslerpi5 &mdash; live</p>
+  <button onclick="shutdown()">Shut down Pi</button>
+  <p id="msg"></p>
   <script>
     var img = document.getElementById('cam');
-    function refresh() {
-      var next = new Image();
-      next.onload = function() { img.src = next.src; };
-      next.src = '/snapshot?' + Date.now();
+    var activeUrl = null;
+
+    function fetchFrame() {
+      fetch('/snapshot')
+        .then(function(r) { return r.blob(); })
+        .then(function(blob) {
+          var newUrl = URL.createObjectURL(blob);
+          img.src = newUrl;
+          if (activeUrl) URL.revokeObjectURL(activeUrl);
+          activeUrl = newUrl;
+          fetchFrame();
+        })
+        .catch(function() {
+          setTimeout(fetchFrame, 1000);
+        });
     }
-    refresh();
-    setInterval(refresh, 500);
+    fetchFrame();
+
+    function shutdown() {
+      if (!confirm('Shut down the Pi? You will need to physically unplug and replug it to restart.')) return;
+      fetch('/shutdown', { method: 'POST' })
+        .then(function() {
+          document.getElementById('msg').textContent = 'Shutting down \u2014 stream will go offline shortly.';
+        })
+        .catch(function() {
+          document.getElementById('msg').textContent = 'Shutdown sent.';
+        });
+    }
   </script>
 </body>
 </html>"""
@@ -154,6 +212,19 @@ class StreamHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html")
             self.end_headers()
             self.wfile.write(html.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        if not self._check_auth():
+            return
+        if self.path == "/shutdown":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Shutting down...")
+            subprocess.Popen(["sudo", "shutdown", "-h", "now"])
         else:
             self.send_response(404)
             self.end_headers()
@@ -282,7 +353,11 @@ def main():
         keepalive_thread = threading.Thread(target=gopro_keepalive, daemon=True)
         keepalive_thread.start()
         time.sleep(1)  # brief pause for stream to stabilise
+        # Low-latency flags: nobuffer disables format-level buffering, low_delay
+        # disables H.264 B-frame reordering — reduces stream latency significantly
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "fflags;nobuffer|flags;low_delay"
         cap = cv2.VideoCapture(CAMERA_DEVICE + "?fifo_size=5000000&overrun_nonfatal=1", cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     else:
         cap = cv2.VideoCapture(CAMERA_DEVICE)
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
@@ -297,6 +372,21 @@ def main():
         raise RuntimeError("Could not read first frame from camera.")
 
     set_latest_frame(frame)
+
+    # Dedicated capture thread — reads as fast as possible to drain FFmpeg's
+    # buffer, so the motion loop always gets the freshest frame.
+    def capture_loop():
+        while True:
+            ret, frame = cap.read()
+            if ret:
+                set_latest_frame(frame)
+            else:
+                time.sleep(0.01)
+
+    capture_thread = threading.Thread(target=capture_loop, daemon=True)
+    capture_thread.start()
+    log.info("Capture thread started — draining camera buffer continuously")
+
     prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
 
@@ -317,20 +407,17 @@ def main():
 
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
-                log.warning("Failed to read frame — retrying...")
-                time.sleep(1)
+            frame = get_latest_frame()
+            if frame is None:
+                time.sleep(0.05)
                 continue
-
-            # Always update the shared frame for the live stream
-            set_latest_frame(frame)
 
             curr_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             curr_gray = cv2.GaussianBlur(curr_gray, (21, 21), 0)
 
             changed_pixels = detect_motion(prev_gray, curr_gray)
             prev_gray = curr_gray
+
 
             if changed_pixels < MOTION_THRESHOLD:
                 time.sleep(0.05)
