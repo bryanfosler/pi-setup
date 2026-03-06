@@ -59,6 +59,7 @@
 
 ## Security Hardening (applied 2026-03-02)
 - UFW: default deny-incoming; allow SSH (22), Tailscale (41641/udp), HAP (51732 local), petcam (8080 local), Open-WebUI/Homebridge (Tailscale-only)
+- **GoPro USB stream rule (added 2026-03-06):** `sudo ufw allow in from 172.23.194.51 to any port 8554 proto udp comment 'GoPro USB stream'` — required for petcam to receive the video. Without this, GoPro packets arrive at eth1 but iptables drops them before any socket sees them.
 - SSH: `PasswordAuthentication no` (line 57 of `/etc/ssh/sshd_config`)
 - Ollama: `127.0.0.1:11434` only — NOT accessible from LAN (use Tailscale if needed remotely)
 - rpcbind: disabled (service + socket)
