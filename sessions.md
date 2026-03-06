@@ -1,3 +1,60 @@
+## Session 19 — Daily Digest, Noon Report, Discord Reporting
+
+**Date:** 03.06.2026
+**Time spent:** ~2h 30m
+
+### What We Built
+- `daily_digest.py`: 7am morning briefing — Notion High Priority tasks, Strava training week vs plan + Claude coaching, PM RSS/Reddit headlines
+- `noon_report.py`: 12pm midday Pi health report — Piper session/message/error counts, CPU/RAM/temp/disk, service status
+- `lib/discord.py`: webhook delivery layer with chunked send and Cloudflare User-Agent fix
+
+### What Shipped
+- Both scripts posting to Discord (`#daily-reports`) and Telegram simultaneously
+- 6 RSS feeds (Lenny's, Product Talk, SVPG, John Cutler, Melissa Perri, Ken Norton) + 4 Reddit subs
+- Obsidian weekly training note written at 7am run (syncs to Mac via Syncthing)
+- Cron jobs: 7am daily digest, 12pm noon report
+- deploy.sh auto-touches SKILL.md after rsync to trigger OpenClaw snapshot refresh
+
+### Bugs Fixed
+- Strava 401: original token had only `read` scope (not `activity:read`) — fixed by transferring properly-scoped refresh token from run-route-generator
+- Strava token rotation: `strava_refresh.py` now persists new refresh token to openclaw.json after every exchange
+- Discord Cloudflare 403: added `User-Agent: PiperBot/1.0` header
+- RSS formatting: removed leading indentation, added clickable links, bold section headers
+- task-builder SKILL.md: added CRITICAL note preventing Piper from executing vs capturing tasks
+
+### Decisions Made
+- Reports go to both Discord and Telegram (Discord gets markdown, Telegram gets stripped plain text)
+- Strava token scope issue root cause: initial Pi OAuth was `read`-only; route-generator token has full `activity:read`
+- Evening report design: deferred to next session — need to discuss content/time
+
+## Session 18 — Petcam GoPro Stream Fix
+
+**Date:** 03.06.2026
+**Time spent:** ~1h 15m
+
+### What We Built
+- Diagnosed and fixed petcam — it had never successfully streamed since the GoPro USB support commit
+
+### What Shipped
+- UFW rule allowing UDP 8554 from GoPro IP (172.23.194.51) — the actual root cause fix
+- `fifo_size` corrected from 65536 → 5000000 in both deployed file and repo
+- FFMPEG low-latency flags (`fflags nobuffer`, `flags low_delay`, `CAP_PROP_BUFFERSIZE=1`)
+- Dedicated capture thread to drain FFMPEG buffer
+- Stream credentials moved to `PETCAM_USERNAME`/`PETCAM_PASSWORD` env vars (public repo)
+- Piper petcam skill updated to include Tailscale stream link on start
+- petcam-control.py and petcam-control.service added to repo
+
+### Bugs Fixed
+- Petcam crashing every 30s — GoPro stream never opened (root: UFW blocking UDP 8554)
+- 12-20s stream latency — large FIFO + no low-latency FFMPEG flags
+- Credentials in plaintext in a public repo — replaced with env vars
+
+### Decisions Made
+- `/stream` (MJPEG) is fine for desktop; use the snapshot viewer at `/` for mobile/Tailscale
+- UFW GoPro rule scoped to specific source IP (172.23.194.51) not a broad subnet
+
+---
+
 ## Session 15 — Hybrid Local AI Architecture for Piper
 
 **Date:** 03.05.2026
