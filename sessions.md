@@ -447,3 +447,41 @@
 - Local LLM abandoned for now: Pi5 CPU inference takes 2-4 min per response; not viable for chat
 - Anthropic Haiku as permanent model until Pi5 gets GPU or we move to a faster device
 - `allowFrom` locked to Bryan's IDs only; add more users manually when ready
+
+## Session 16 — Pi5 Edge AI Hub Phase 1: Architecture, shared lib, task-builder skill
+
+**Date:** 03.05.2026
+**Time spent:** ~2h 30m
+
+### What We Built
+- Full Pi5 Edge AI Hub architecture design (OpenClaw + n8n + shared lib pattern)
+- Shared Python lib: `notion.py`, `claude.py`, `telegram.py`, `github.py` (all stdlib-only)
+- `task-builder` OpenClaw skill — conversational Notion task creation with coaching flow
+- `create_notion_task.py` — script with --dry-run, validated end-to-end against Notion API
+- `health_check.py` — cron-based Pi health monitor (temp/disk/RAM/services → Telegram)
+- `deploy.sh` — rsync-based deployer with --dry-run and --skill=<name> flags
+- 5 detailed backlog GitHub issues (#15-19) for deferred Phase 2+ components
+
+### What Shipped
+- Shared lib committed and deployed to Pi
+- Task-builder SKILL.md + script deployed, verified ✅ in `npx openclaw skills list`
+- `create_notion_task.py` tested live — Notion page created successfully
+- OpenClaw model switched from `ollama/qwen2.5` → `claude-haiku-4-5-20251001`
+- Piper Tasks Notion DB created with correct schema
+
+### Bugs Fixed
+- rsync `--delete` flag wiped strava/obsidian/piper-memory skills on first deploy — restored from sandbox, removed --delete
+- SKILL.md frontmatter was wrong format — OpenClaw needs `name`/`description`/`metadata.openclaw` not `emoji`/`requires`
+- `NOTION_API_KEY` missing from Pi openclaw.json env block — set securely via terminal
+
+### Decisions Made
+- Skills deployed additively (no --delete) — Pi skills not in repo are never touched
+- Phase 2 items (Grafana, Gitea, Neo4j, Node-RED, home agent) tracked as backlog with detailed gate conditions
+- OpenClaw = interactive chat; n8n = scheduled/autonomous workflows — strict boundary
+
+### Remaining / Next Session
+- task-builder skill routes to command execution instead of coaching flow (#22)
+- Automate `touch` snapshot refresh in deploy.sh (#23)
+- n8n + Docker Compose for Phase 1
+- Daily Digest workflow
+- Pi health check cron: wire TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID env vars
