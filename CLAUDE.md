@@ -46,7 +46,7 @@
 - **To check logs:** `npx openclaw logs --plain --limit 50`
 - **To verify model:** look for `model=` in `embedded run start` log line
 - **models.json:** `~/.openclaw/agents/main/agent/models.json` — all local models must have `contextWindow: 4096` (not 131072)
-- **Adding a new skill:** after creating `~/.openclaw/workspace/skills/<name>/SKILL.md`, run `touch` on the file while gateway is running to trigger skill snapshot refresh
+- **Adding a new skill:** SKILL.md frontmatter must use `name` + `description` + `metadata.openclaw.emoji` fields (NOT emoji/requires/primaryEnv). After deploying, run `touch ~/.openclaw/workspace/skills/<name>/SKILL.md` to trigger skill snapshot refresh. Verify with `npx openclaw skills list`.
 - **local-infer skill:** `~/.openclaw/workspace/skills/local-infer/` — classification, extraction, summarization via Qwen2.5-1.5B; circuit breaker state at `~/.openclaw/local-infer-state.json`
 
 ## Piper Logging Stack
