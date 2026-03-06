@@ -41,10 +41,13 @@
 - **Config:** `~/.openclaw/openclaw.json`
 - **API key:** `~/.openclaw/agents/main/agent/auth-profiles.json` (profile: `anthropic:manual`)
 - **Model:** `claude-haiku-4-5-20251001` (primary), `claude-sonnet-4-6` (fallback)
-- **Skills:** session-memory, obsidian, notion (requires `NOTION_API_KEY` in config env block)
+- **Skills:** session-memory, obsidian, notion, local-infer (requires `NOTION_API_KEY` in config env block)
 - **To replace API key:** `python3` REPL on Pi → `key = input('Paste key: ')` → update auth-profiles.json → restart service
 - **To check logs:** `npx openclaw logs --plain --limit 50`
 - **To verify model:** look for `model=` in `embedded run start` log line
+- **models.json:** `~/.openclaw/agents/main/agent/models.json` — all local models must have `contextWindow: 4096` (not 131072)
+- **Adding a new skill:** after creating `~/.openclaw/workspace/skills/<name>/SKILL.md`, run `touch` on the file while gateway is running to trigger skill snapshot refresh
+- **local-infer skill:** `~/.openclaw/workspace/skills/local-infer/` — classification, extraction, summarization via Qwen2.5-1.5B; circuit breaker state at `~/.openclaw/local-infer-state.json`
 
 ## Piper Logging Stack
 - **Logger:** `~/.openclaw/piper_logger.py` — polls `~/.openclaw/agents/main/sessions/*.jsonl` every 15s
