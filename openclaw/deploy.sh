@@ -72,6 +72,14 @@ if [[ $DRY_RUN -eq 0 ]]; then
                   find $PI_WORKSPACE/scripts -name '*.py' -exec chmod +x {} \;"
 
   echo ""
+  echo "==> Touching SKILL.md files to trigger snapshot refresh"
+  if [[ -n "$SKILL_ONLY" ]]; then
+    ssh "$PI_HOST" "touch $PI_WORKSPACE/skills/$SKILL_ONLY/SKILL.md"
+  else
+    ssh "$PI_HOST" "find $PI_WORKSPACE/skills -name 'SKILL.md' -exec touch {} \;"
+  fi
+
+  echo ""
   echo "==> Restarting OpenClaw gateway to pick up new skills"
   ssh "$PI_HOST" "systemctl --user restart openclaw-gateway && sleep 2 && \
                   systemctl --user is-active openclaw-gateway && echo 'Gateway: active'"

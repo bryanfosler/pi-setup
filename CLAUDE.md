@@ -142,6 +142,8 @@ sudo systemctl restart rtpmidid     # restart (clears stale ALSA ports)
 
 ## Deploying petcam.py Updates
 The service runs from `/usr/local/lib/petcam/petcam.py` (not the repo copy).
+**Before deploying:** always grep for hardcoded credentials — pi-setup repo is PUBLIC.
+`grep -n 'USERNAME\|PASSWORD\|password\|token' petcam/petcam.py` — must only show `os.environ.get(...)` patterns, never literal strings.
 After editing `petcam/petcam.py` in the repo, deploy with:
 ```bash
 # From Mac:
