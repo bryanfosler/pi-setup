@@ -1,3 +1,32 @@
+## Session 20 — Pi Health Monitor + Discord Auto-Restart
+
+**Date:** 03.06.2026
+**Time spent:** ~40m
+
+### What We Built
+- `openclaw/pi_health.py` — zero-token Pi health monitor (stdlib only, no AI)
+- Created **PI Alerts** Telegram group using existing @Piper_RPi5Bot (same token, clean separation)
+
+### What Shipped
+- Health checks: 2 systemd user services, 4 systemd system services, 2 docker containers, 3 HTTP endpoints, Discord connection state, Tailscale
+- Direct Telegram Bot API alerts to PI Alerts group (chat ID: -1003836641590) — bypasses OpenClaw entirely
+- 30-minute cooldown per-service to suppress alert spam
+- Recovery messages when services come back
+- Auto-restart of openclaw-gateway when Discord is detected dead
+- Cron: `*/5 * * * *` with hardcoded `XDG_RUNTIME_DIR=/run/user/1000`
+
+### Bugs Fixed
+- Discord WebSocket code 1005 drop — failed resume attempt left connection dead with no retry
+- `npx openclaw logs` failing from cron — needed `XDG_RUNTIME_DIR` env var
+- Petcam HTTP check false-positive — 401 (auth required) treated as failure; fixed to accept any HTTP response
+
+### Decisions Made
+- Same bot, new Telegram group (vs new bot) — simpler, one token to manage
+- Petcam excluded from HTTP checks — port 8080 only binds when GoPro is connected
+- Zero tokens: health monitoring is deterministic; no LLM needed
+
+---
+
 ## Session 19 — Daily Digest, Noon Report, Discord Reporting
 
 **Date:** 03.06.2026
