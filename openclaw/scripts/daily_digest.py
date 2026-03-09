@@ -6,6 +6,7 @@ Sections:
   1. High-priority Notion tasks (High priority, not Done)
   2. Training week vs plan + Claude coaching note
   3. PM headlines (RSS feeds + Reddit)
+  4. Podcast picks (iTunes Search API + subscribed shows)
 
 Side effect: writes ~/ObsidianVault/AI Knowledge/Training/YYYY-WXX.md
 
@@ -27,6 +28,7 @@ import datetime
 import subprocess
 import urllib.request
 import urllib.error
+import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -36,6 +38,8 @@ HOME           = Path.home()
 OBSIDIAN_DIR   = HOME / "ObsidianVault" / "AI Knowledge" / "Training"
 TRAINING_PLAN  = OBSIDIAN_DIR / "Eugene Training Plan.md"
 STRAVA_REFRESH = WORKSPACE / "skills" / "strava" / "scripts" / "strava_refresh.py"
+PODCASTS_MD    = HOME / "ObsidianVault" / "Personal" / "Podcasts.md"
+PODCAST_SEEN   = HOME / ".openclaw" / "podcast_seen.json"
 
 sys.path.insert(0, str(WORKSPACE))
 from lib.notion   import NotionClient, NotionError
@@ -90,6 +94,11 @@ REDDIT_SUBS = [
 MIN_REDDIT_SCORE = 20   # Skip low-signal posts
 MAX_PER_SOURCE   = 2    # Max items per feed/subreddit
 HEADLINE_COUNT   = 8    # Total headlines in digest
+
+PODCAST_TOPICS      = ["product management", "hardware IoT", "artificial intelligence", "Raspberry Pi maker"]
+PODCAST_MIN_MINUTES = 30
+PODCAST_DEDUP_DAYS  = 60
+PODCAST_PICKS       = 3
 
 
 # ── Env loader ────────────────────────────────────────────────────────────────
@@ -472,6 +481,120 @@ def fetch_headlines() -> str:
     return "\n".join(lines)
 
 
+# ── Section 4: Podcast picks ──────────────────────────────────────────────────
+def _podcast_load_shows() -> list[str]:
+    """Parse Personal/Podcasts.md → list of show names (lines starting with '- ')."""
+    try:
+        text = PODCASTS_MD.read_text()
+        return [l.strip()[2:].strip() for l in text.splitlines()
+                if l.strip().startswith("- ")]
+    except FileNotFoundError:
+        print(f"[warn] Podcasts.md not found: {PODCASTS_MD}", file=sys.stderr)
+        return []
+
+
+def _podcast_load_seen() -> dict:
+    try:
+        return json.loads(PODCAST_SEEN.read_text())
+    except Exception:
+        return {"seen": []}
+
+
+def _podcast_save_seen(log: dict) -> None:
+    cutoff = (datetime.date.today() - datetime.timedelta(days=PODCAST_DEDUP_DAYS)).isoformat()
+    log["seen"] = [e for e in log["seen"] if e.get("date_shown", "") >= cutoff]
+    PODCAST_SEEN.write_text(json.dumps(log, indent=2))
+
+
+def _itunes_search(term: str, limit: int = 20) -> list[dict]:
+    try:
+        url = (
+            "https://itunes.apple.com/search?"
+            + urllib.parse.urlencode({"term": term, "entity": "podcastEpisode",
+                                      "limit": limit, "sort": "recent"})
+        )
+        req = urllib.request.Request(url, headers={"User-Agent": "PiperDigest/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read()).get("results", [])
+    except Exception as e:
+        print(f"[warn] iTunes '{term}': {e}", file=sys.stderr)
+        return []
+
+
+def _episode_summary(ep: dict) -> str:
+    desc = (ep.get("description") or ep.get("shortDescription") or "").strip()
+    if not desc:
+        return ""
+    try:
+        return claude_complete(
+            f"Summarize this podcast episode in one sentence (max 20 words):\n\n{desc[:800]}",
+            system="Write extremely concise podcast summaries. One sentence only, no preamble.",
+            max_tokens=60,
+        )
+    except Exception:
+        return desc[:120].rstrip() + ("…" if len(desc) > 120 else "")
+
+
+def fetch_podcasts() -> str:
+    seen_log  = _podcast_load_seen()
+    seen_ids  = {e["id"] for e in seen_log["seen"]}
+    shows     = _podcast_load_shows()
+
+    # Gather candidates: subscribed shows + topic keywords
+    raw: list[dict] = []
+    for show in shows:
+        raw.extend(_itunes_search(show, limit=5))
+    for topic in PODCAST_TOPICS:
+        raw.extend(_itunes_search(topic, limit=10))
+
+    # Dedupe, filter duration, exclude already-seen
+    seen_this_run: set[str] = set()
+    candidates: list[dict] = []
+    for ep in raw:
+        tid = str(ep.get("trackId", ""))
+        if not tid or tid in seen_ids or tid in seen_this_run:
+            continue
+        ms = ep.get("trackTimeMillis") or 0
+        if ms / 60000 < PODCAST_MIN_MINUTES:
+            continue
+        seen_this_run.add(tid)
+        candidates.append(ep)
+
+    if not candidates:
+        return "No new episodes found matching your interests."
+
+    # Most recent first
+    candidates.sort(key=lambda x: x.get("releaseDate", ""), reverse=True)
+    picks = candidates[:PODCAST_PICKS]
+
+    # Update seen log
+    today = datetime.date.today().isoformat()
+    for ep in picks:
+        seen_log["seen"].append({
+            "id":         str(ep.get("trackId", "")),
+            "title":      ep.get("trackName", ""),
+            "date_shown": today,
+        })
+    _podcast_save_seen(seen_log)
+
+    # Format
+    lines = []
+    for ep in picks:
+        show    = ep.get("collectionName", "Unknown Show")
+        title   = ep.get("trackName", "Unknown Episode")
+        mins    = int((ep.get("trackTimeMillis") or 0) / 60000)
+        url     = ep.get("trackViewUrl", "")
+        summary = _episode_summary(ep)
+
+        title_md = f"[{title}]({url})" if url else title
+        line = f"- **[{show}]** {title_md} ({mins} min)"
+        if summary:
+            line += f"\n  _{summary}_"
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
 # ── Delivery ──────────────────────────────────────────────────────────────────
 def _strip_md(text: str) -> str:
     """Strip Discord markdown for Telegram plain-text delivery."""
@@ -515,14 +638,17 @@ def main():
     day_name = today.strftime("%A, %B %-d")
     print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] Building daily digest for {day_name}...", file=sys.stderr)
 
-    print("[1/3] Notion tasks...", file=sys.stderr)
+    print("[1/4] Notion tasks...", file=sys.stderr)
     tasks = fetch_tasks()
 
-    print("[2/3] Training...", file=sys.stderr)
+    print("[2/4] Training...", file=sys.stderr)
     training = build_training_section()
 
-    print("[3/3] Headlines...", file=sys.stderr)
+    print("[3/4] Headlines...", file=sys.stderr)
     headlines = fetch_headlines()
+
+    print("[4/4] Podcast picks...", file=sys.stderr)
+    podcasts = fetch_podcasts()
 
     message = (
         f"**Good morning! {day_name}**\n"
@@ -532,6 +658,8 @@ def main():
         f"**— TRAINING —**\n{training}\n"
         f"\n"
         f"**— PM READS —**\n{headlines}\n"
+        f"\n"
+        f"**— PODCAST PICKS —**\n{podcasts}\n"
     )
 
     send_both(message)
