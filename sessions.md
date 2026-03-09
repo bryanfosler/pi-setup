@@ -1,3 +1,64 @@
+## Session 25 — Obsidian iCloud Migration + Vault Organization
+
+**Date:** 03.09.2026
+**Time spent:** ~1h30m
+
+### What We Built
+- Migrated Obsidian vault from `~/Documents/ObsidianVault/` to iCloud Drive for iPhone sync
+- Updated Mac Syncthing to watch new iCloud path (Pi path unchanged)
+- Fixed stop.py to write session logs to `sessions/YYYY-MM-DD-<project>.md` (iCloud path, correct folder)
+- Reorganized all stray vault files: moved to `sessions/` with descriptive slugs
+- Updated wrap-up SKILL.md to rename auto-log at wrap-up time
+
+### What Shipped
+- Vault at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/ObsidianVault/` — iCloud + Syncthing both active ✓
+- `AI Knowledge/Claude Code/` is clean: only `cc-rate-limit-playbook.md` + `sessions/`
+- 6 date-only files renamed with descriptive slugs and moved into `sessions/`
+- `AI Knowledge/Piper/Podcasts.md` and `Task-Creation-Workflow.md` moved from `AI Knowledge/` root
+- `Personal/Podcasts.md` created for Piper podcast discovery
+
+### Bugs Fixed
+- stop.py was writing via Obsidian `daily:append` CLI → landed in vault root. Removed CLI call entirely
+- stop.py path still pointed to old `~/Documents/ObsidianVault/` after vault move — updated to iCloud path
+- Daily logs were going to `Daily/` folder (wrong) — reverted to `sessions/` with project slug
+
+### Decisions Made
+- iCloud for iPhone sync (Syncthing doesn't support iOS background sync)
+- All session files live in `sessions/` — no loose files in `AI Knowledge/Claude Code/`
+- stop.py writes `sessions/YYYY-MM-DD-<project>.md`; wrap-up renames to full descriptive slug
+- Syncthing still handles Mac ↔ Pi; iCloud handles Mac ↔ iPhone
+
+---
+
+## Session 24 — Piper Podcast Picks Feature
+
+**Date:** 03.09.2026
+**Time spent:** ~45m
+
+### What We Built
+- `fetch_podcasts()` function added to `daily_digest.py`
+- iTunes Search API integration (free, no key) for episode discovery
+- `Personal/Podcasts.md` in Obsidian vault — sourced from Apple Podcasts SQLite DB on Mac
+- Dedup log at `~/.openclaw/podcast_seen.json` (60-day expiry, auto-prune)
+
+### What Shipped
+- Podcast picks section live in 7am daily digest (section 4 of 4)
+- Searches 8 subscribed shows + 4 topic keywords (PM, IoT, AI, RPi)
+- Filters to 30+ min episodes; Claude Haiku generates 1-sentence summaries
+- "No new episodes found" fallback for cron verification
+- Deployed via `deploy.sh`; tested — 48 candidates found, 3 picks from Hard Fork / Everyday AI / Cognitive Revolution
+
+### Bugs Fixed
+- None
+
+### Decisions Made
+- Mix subscribed shows + topic search (not either/or)
+- Apple Podcasts SQLite DB at `~/Library/Group Containers/243LU875E5.groups.com.apple.podcasts/Documents/MTLibrary.sqlite` — queryable to get subscribed shows
+- Podcasts.md scoped to tech/PM/AI shows only (true crime, music excluded from digest)
+- Apple listen history data pending — will refine show matching when it arrives
+
+---
+
 ## Session 23 — Docker UFW Bypass Fix
 
 **Date:** 03.08.2026
