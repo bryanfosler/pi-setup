@@ -57,7 +57,16 @@
 - **Notion integration:** "Piper OpenClaw" (separate from Claude Code integration)
 - **Obsidian output:** `~/ObsidianVault/AI Knowledge/Piper/YYYY-MM-DD.md` → syncs to Mac via Syncthing
 
-## Security Hardening (applied 2026-03-02)
+## Secrets Management (updated 2026-03-07)
+- All OpenClaw secrets in AES-256 encrypted `.enc` files: `~/.config/systemd/user/credstore/*.enc`
+- Encrypted with machine-id: `printf '%s' "$VAL" | openssl enc -aes-256-cbc -pbkdf2 -pass file:/etc/machine-id -out NAME.enc`
+- Decrypted at startup by `~/.openclaw/start-secure.sh` → `/dev/shm/openclaw-runtime.json` (tmpfs)
+- Service uses `OPENCLAW_CONFIG_PATH=/dev/shm/openclaw-runtime.json`; `openclaw.json` has all secrets empty
+- To re-encrypt one secret: encrypt new value to `.enc`, then `systemctl --user restart openclaw-gateway`
+- **Never read `.enc` files or openclaw.json through Claude** — boolean presence check only
+
+## Security Hardening (applied 2026-03-02, updated 2026-03-08)
+- **Docker/UFW bypass (fixed 2026-03-08):** DOCKER-USER chain rules restrict Open-WebUI (port 3000) to Tailscale only (100.64.0.0/10). Rules saved via iptables-persistent. Container IP: 172.17.0.2. If rules stop working after Docker restart, check container IP with `docker inspect open-webui --format '{{.NetworkSettings.IPAddress}}'`.
 - UFW: default deny-incoming; allow SSH (22), Tailscale (41641/udp), HAP (51732 local), petcam (8080 local), Open-WebUI/Homebridge (Tailscale-only)
 - **GoPro USB stream rule (added 2026-03-06):** `sudo ufw allow in from 172.23.194.51 to any port 8554 proto udp comment 'GoPro USB stream'` — required for petcam to receive the video. Without this, GoPro packets arrive at eth1 but iptables drops them before any socket sees them.
 - SSH: `PasswordAuthentication no` (line 57 of `/etc/ssh/sshd_config`)

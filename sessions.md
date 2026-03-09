@@ -1,3 +1,61 @@
+## Session 23 — Docker UFW Bypass Fix
+
+**Date:** 03.08.2026
+**Time spent:** ~35m
+
+### What We Built
+- DOCKER-USER iptables rules to restrict Open-WebUI (port 3000) to Tailscale only
+- Installed iptables-persistent, saved rules to `/etc/iptables/rules.v4`
+
+### What Shipped
+- Port 3000 no longer accessible from internet — Tailscale (100.64.0.0/10) + localhost only
+- Rules survive reboots and Docker restarts
+
+### Bugs Fixed
+- Catch-all ACCEPT rule in DOCKER-USER was making existing port 8080 DROP rule unreachable — port 3000 rules inserted before it
+
+### Decisions Made
+- Open-WebUI: Tailscale-only (not LAN) — zero friction for Bryan, cleaner security boundary
+- iptables-persistent is the right tool for persisting DOCKER-USER rules
+
+---
+
+## Session 21 — Security Hardening + Obsidian Vault Integration
+
+**Date:** 03.07.2026
+**Time spent:** ~2h30m
+
+### What We Built
+- `vault_security.py` — prompt injection scanner for all vault content before it reaches Claude
+- `user_prompt_submit.py` — UserPromptSubmit hook that injects daily tasks + active project note into Claude context once per session (~350 token budget)
+- `stop.py` — upgraded to use `obsidian daily:append` CLI with direct file-write fallback
+- Pi `~/ObsidianVault/search.py` — secure vault search with injection scanning, callable by Piper
+- Pi obsidian SKILL.md — updated with search.py usage, security rules, context size caps
+- `~/.openclaw/start-secure.sh` — startup wrapper: decrypts `.enc` files → patches secrets into `/dev/shm/openclaw-runtime.json` (tmpfs, never on disk)
+- OpenClaw `openclaw-gateway.service` — updated to use wrapper; template config has all secrets zeroed
+- `strava_refresh.py` — fixed to write rotated token to `.enc` file instead of plaintext `openclaw.json`
+
+### What Shipped
+- All OpenClaw secrets migrated from plaintext `openclaw.json` → AES-256 `.enc` files (machine-id key)
+- Runtime config lives in `/dev/shm/` only — gone on reboot, recreated by wrapper on restart
+- CRITICAL UFW fix: OpenClaw ports 18789/18790 were open to the entire internet — restricted to LAN + Tailscale
+- `user_prompt_submit.py` hook confirmed working (system reported success)
+
+### Bugs Fixed
+- OpenClaw internet exposure (UFW rules allowed 18789/18790 from Anywhere)
+- Strava refresh token writing back to plaintext `openclaw.json` after every API call
+
+### Decisions Made
+- Prompt injection defence: scan all vault content before injecting; wrap in `<vault-context trust="data-only">` delimiters
+- Used openssl AES-256-CBC + machine-id as passphrase (systemd-creds encrypt requires polkit over SSH)
+- UserPromptSubmit hook fires once per session (session_id marker in /tmp), not on every message
+- `obsidian daily:append` CLI preferred over direct file writes (proper Dataview indexing)
+
+### Remaining / Next Session
+- Telegram 401 — final token re-encryption + restart needed (debug step accidentally printed the rotated token)
+- Docker/UFW bypass: port 3000 (Open-WebUI) bypasses UFW via iptables DOCKER chain — fix with DOCKER-USER rules
+- Verify Telegram + Discord fully working end-to-end
+
 ## Session 20 — Pi Health Monitor + Discord Auto-Restart
 
 **Date:** 03.06.2026
@@ -571,3 +629,29 @@
 - n8n + Docker Compose for Phase 1
 - Daily Digest workflow
 - Pi health check cron: wire TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID env vars
+
+## Session 22 — OpenClaw Security Audit Resolution + Telegram/Discord/Notion Fix
+
+**Date:** 03.08.2026
+**Time spent:** ~1h
+
+### What We Built
+- Nothing net-new — this session completed the unfinished work from Session 21
+
+### What Shipped
+- Security audit: 0 critical, 3 warn (down from 1 critical + 5 warn) ✅
+- `start-secure.sh` — added `gateway.remote.token = $gw` injection so CLI tools match gateway auth
+- Pi `.bashrc` — added `OPENCLAW_CONFIG_PATH=/dev/shm/openclaw-runtime.json` so all openclaw CLI commands use runtime config
+- Telegram bot token re-encrypted to `.enc` file; 401 resolved ✅
+- Discord connecting ✅
+- Sandbox mode `non-main` → `off` so Piper skills (Notion, curl, python3) work in tools ✅
+
+### Bugs Fixed
+- Telegram 401 Unauthorized — stale/revoked token; re-encrypted current token to `.enc`
+- Gateway token mismatch — `gateway.remote.token` was not being injected into runtime config; added to `start-secure.sh`
+- `npx openclaw logs` using wrong config — no `OPENCLAW_CONFIG_PATH` in user shell; added to `.bashrc`
+- Notion skill sandbox failure — `non-main` sandbox runs tools in minimal `/bin/sh` without PATH; reverted to `off`
+
+### Decisions Made
+- `sandbox.mode = "off"` accepted for single-user personal Pi — encrypted tokens + rate limiting + device auth are the meaningful protections; sandbox PATH restriction breaks skills without measurable security gain for this threat model
+- `gateway.remote.token` must always equal `gateway.auth.token` in start-secure.sh (both sides of the WebSocket auth)
