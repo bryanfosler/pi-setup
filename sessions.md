@@ -716,3 +716,50 @@
 ### Decisions Made
 - `sandbox.mode = "off"` accepted for single-user personal Pi — encrypted tokens + rate limiting + device auth are the meaningful protections; sandbox PATH restriction breaks skills without measurable security gain for this threat model
 - `gateway.remote.token` must always equal `gateway.auth.token` in start-secure.sh (both sides of the WebSocket auth)
+
+## Session 23 — Piper User Isolation
+
+**Date:** 03.09.2026
+**Time spent:** ~1h
+
+### What We Built
+- Dedicated unprivileged `piper` user (uid=1001) for OpenClaw isolation
+- Sudoers rule `/etc/sudoers.d/piper-gateway` — bfosler can `sudo -u piper systemctl` without password
+- Management aliases: `piper-status`, `piper-restart`, `piper-logs` in bfosler .bashrc
+
+### What Shipped
+- OpenClaw gateway + piper-logger services migrated to run under `piper` user ✅
+- Credstore + workspace migrated to `/home/piper/` ✅
+- Runtime config `chmod 640 piper:piper` — bfosler in piper group can read for CLI ✅
+- `pi_health.py` restart command updated to target piper's user session ✅
+- `backup.sh` updated to rsync piper's home paths ✅
+- `piper_notion.py` crons moved to piper's crontab ✅
+- 7 world-readable plaintext secret files deleted from `/dev/shm/` (leftover from past debugging) ✅
+
+### Bugs Fixed
+- Stale `bfosler`-owned `/dev/shm/openclaw-runtime.json` blocked piper from writing on first start — deleted it before starting piper's service
+
+### Decisions Made
+- `chmod 640` on runtime config (not 600) — bfosler needs group-read for CLI; piper group membership is the access control layer
+- All cron scripts that read vault/Strava paths stay as bfosler; only piper_notion.py (uses Path.home()) moves to piper's crontab
+- `backup.sh` stays as bfosler cron — it can rsync piper's home since bfosler has sudo; avoids needing piper to have write to `/mnt/backup`
+
+## Session 24 — Brave Web Search Fix
+
+**Date:** 03.09.2026
+**Time spent:** ~45m
+
+### What We Built
+- Diagnosed and fixed OpenClaw's native web search not working after piper user isolation
+
+### What Shipped
+- `start-secure.sh` now injects `BRAVE_API_KEY` (in addition to `BRAVE_SEARCH_API_KEY`) from `brave-search.enc` ✅
+- Piper web search fully working end-to-end via Telegram/Discord ✅
+
+### Bugs Fixed
+- OpenClaw's built-in web search reads `BRAVE_API_KEY`, not `BRAVE_SEARCH_API_KEY` — one env var name difference was the entire root cause
+- Gateway log dir (`/tmp/openclaw-1001/`) permission denied when running as bfosler — needs `sudo -u piper` to access
+
+### Decisions Made
+- Kept both `BRAVE_API_KEY` and `BRAVE_SEARCH_API_KEY` in the env block — native OpenClaw search uses the former, custom web-search skill uses the latter; no harm having both
+- Used OpenClaw's built-in web search (Brave provider) rather than our custom skill — native integration is better; custom skill can stay as fallback
