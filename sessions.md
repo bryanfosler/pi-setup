@@ -763,3 +763,97 @@
 ### Decisions Made
 - Kept both `BRAVE_API_KEY` and `BRAVE_SEARCH_API_KEY` in the env block — native OpenClaw search uses the former, custom web-search skill uses the latter; no harm having both
 - Used OpenClaw's built-in web search (Brave provider) rather than our custom skill — native integration is better; custom skill can stay as fallback
+
+## Session 25 — Piper PM Schedule Skill
+
+**Date:** 03.09.2026
+**Time spent:** ~2h
+
+### What We Built
+- Full hardware PM cadence reference doc (`AI Knowledge/Piper/PM-Cadence.md`) — 23 recurring tasks from daily to annual with instructions, examples, and SRAM-specific context
+- `pm-schedule` OpenClaw skill with two Python scripts:
+  - `send_invite.py` — sends .ics calendar invites via Gmail SMTP to bfosler@sram.com
+  - `fetch_calendar.py` — fetches/parses Outlook ICS URL (blocked by SRAM SSO, kept for future)
+- Gmail assistant account: `bfosler.assistant@gmail.com` (display: "Bryan Fosler (Assistant)")
+- Credentials stored encrypted via systemd-creds: Gmail SMTP app password + Outlook ICS URL
+- Sudoers rules for piper user to decrypt both credentials
+- Updated Piper context files: USER.md, MEMORY.md, HEARTBEAT.md, TOOLS.md
+- Vault symlink: `/home/piper/ObsidianVault` → `/home/bfosler/ObsidianVault`
+- Vault permissions tightened: 750, piper added to bfosler group
+
+### What Shipped
+- pm-schedule skill deployed to piper's workspace
+- send_invite.py confirmed working via direct test (test invite sent to bfosler@sram.com)
+- PM cadence doc in Obsidian (synced to Pi)
+- Security improvements: vault world-access removed, credentials properly scoped to piper
+
+### Bugs Fixed
+- systemd-creds filename mismatch: embedded name must match base filename exactly (no .cred extension)
+- Skills deployed to wrong user path (bfosler vs piper) — copied and rechowned to /home/piper/.openclaw/workspace/
+- Vault inaccessible to piper — fixed via group membership + 750 permissions
+
+### Decisions Made
+- SRAM M365 blocks all external calendar access (ICS + HTML both require SSO) → screenshot flow is primary
+- One Gmail account for both calendar invites and future draft email delivery
+- Credentials stored at `/home/bfosler/.credentials/` (no .cred extension — systemd-creds validates filename vs embedded name)
+
+## Session 26 — Google Calendar API + OpenClaw Upgrade
+
+**Date:** 03.11.2026
+**Time spent:** ~2h30m
+
+### What We Built
+- Full Google Calendar API OAuth2 integration for Piper's pm-schedule skill
+- `fetch_calendar.py` rewrite — reads both personal Gmail + SRAM Outlook calendars via Google API
+- `--freebusy` mode — finds open work-hour slots (8am-6pm CST Mon-Fri) avoiding all SRAM meetings
+- 4 encrypted credentials stored in Pi credstore: gcal-client-id, gcal-client-secret, gcal-refresh-token, gcal-sram-calendar-id
+- `start-secure.sh` updated to inject all 4 as env vars into runtime config
+- Backup script fixed: added `sudo` + `--no-perms --no-owner --no-group` for exFAT compatibility
+
+### What Shipped
+- Piper can now read Bryan's live SRAM calendar — no screenshot needed ✅
+- Free/busy slots query working (confirmed 14 busy blocks, 14 free slots for current week) ✅
+- SKILL.md updated to replace screenshot workflow with API-based flow ✅
+- OpenClaw upgraded from 2026.3.2 → 2026.3.8 cleanly (plugins + channels survived) ✅
+- Nightly backup script fixed and verified ✅
+
+### Bugs Fixed
+- SRAM calendar listed as `summary: "Calendar"` not "SRAM" — must use `summaryOverride` field
+- `start-secure.sh` in bfosler's home ≠ piper's home — service reads `/home/piper/.openclaw/start-secure.sh`
+- rsync backup failing: needed `sudo` to read piper dirs + `--no-perms/--no-owner/--no-group` for exFAT
+- npm upgrade as piper needed `--prefix /home/piper/.npm-global` (npm config prefix set to `/usr`)
+
+### Decisions Made
+- SRAM Outlook → Google Calendar subscription is the read path (sidesteps M365 SSO block completely)
+- GCP project under `bfosler.assistant@gmail.com`, Desktop app OAuth type, scopes: calendar.readonly + calendar.events
+- All 4 GCal credentials follow existing credstore pattern (openssl AES-256 + machine-id)
+
+## Session 26 — SD Card Optimization, Vault Security & pm-schedule Fix
+
+**Date:** 03.10.2026
+**Time spent:** ~1h30m
+
+### What We Built
+- log2ram installed (128MB RAM disk for /var/log, active after reboot)
+- journald capped at 64MB disk / 32MB RAM
+- SQLite WAL mode + synchronous=NORMAL on piper_logs.db
+- Vault git initialized — 143-file initial snapshot, daily launchd auto-commit at 11pm
+- Vault write access scoped: piper can write only to AI Knowledge/Piper, AI Knowledge/Training, AI Knowledge/Claude Code/sessions, TaskNotes/Tasks
+- Anti-injection security note added to Piper USER.md
+
+### What Shipped
+- log2ram active — /var/log is now RAM-backed
+- fstrim.timer already enabled (TRIM supported on mmcblk0)
+- Vault git rollback capability live
+- pm-schedule end-to-end invite send confirmed working
+
+### Bugs Fixed
+- pm-schedule blocked: Python subprocess sudo failed without TTY — fixed with `Defaults!/usr/bin/systemd-creds !use_pty` in sudoers
+- Vault write broken for piper after 750 hardening — restored via scoped g+w on 4 target dirs
+- `xargs chmod` failed on paths with spaces — fixed with `-print0 | xargs -0`
+- `!use_pty` sudoers line escaped to `\!use_pty` via tee heredoc — fixed by writing via Python
+
+### Decisions Made
+- Piper gets write to 4 dirs only (AI Knowledge/Piper, Training, CC/sessions, TaskNotes/Tasks) — everything else read-only
+- Vault git on Mac (not Pi) — Mac is authoritative, Syncthing propagates Pi changes up
+- launchd preferred over cron on macOS for reliability
