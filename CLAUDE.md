@@ -78,6 +78,12 @@
 - Host key error after IP change: `ssh-keygen -R 100.99.74.37`
 - Multi-line Python scripts over SSH: write locally with Write tool, pipe with `ssh host "cat > /remote/path" < /local/file`
 
+## Piper Workspace Permissions (critical)
+- `/home/piper/` and `/home/piper/.openclaw/` must be **`710`** (piper group gets execute/traverse only)
+- bfosler is in piper group — with `710`, bfosler can traverse into `.openclaw/workspace/` but can't list `.openclaw/` itself
+- **If bfosler can't write to workspace**: `sudo chmod g+x /home/piper /home/piper/.openclaw`
+- This drifts silently — any `sudo chmod 700` on piper's home will break bfosler's workspace access and all sync scripts
+
 ## Connected Devices
 - **CME C2MIDI Pro** — USB MIDI controller, ALSA client 24 (`C2MIDI Pro MIDI 1`)
 - **USB Webcam** — `/dev/video0`, used by petcam service
