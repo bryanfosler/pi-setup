@@ -857,3 +857,81 @@
 - Piper gets write to 4 dirs only (AI Knowledge/Piper, Training, CC/sessions, TaskNotes/Tasks) — everything else read-only
 - Vault git on Mac (not Pi) — Mac is authoritative, Syncthing propagates Pi changes up
 - launchd preferred over cron on macOS for reliability
+
+## Session 27 — Piper Dual Memory Fix
+
+**Date:** 03.14.2026
+**Time spent:** ~30m
+
+### What We Built
+- Diagnosed the dual-memory ambiguity: piper-memory and piper-reflect both pointing at `/home/bfosler/ObsidianVault/AI Knowledge/Piper/memory.md` which piper user can read but not write (EACCES)
+- Confirmed in journal logs: piper-reflect ran at 11:18pm CT on 2026-03-13 but write step silently failed
+- Consolidated to single canonical memory: `/home/piper/.openclaw/workspace/MEMORY.md` (piper-owned)
+
+### What Shipped
+- `piper-memory/SKILL.md`: memory path updated to workspace MEMORY.md
+- `piper-reflect/SKILL.md`: memory path + section name (Lessons & Patterns → Lessons Learned) + Discord message template updated
+- Added identity/channels/preferences sections to workspace MEMORY.md
+- Renamed Obsidian `memory.md` → `Piper Knowledge Base.md` (human-readable reference, not runtime)
+
+### Bugs Fixed
+- piper-reflect nightly write silently failing (EACCES on bfosler-owned file)
+- piper-memory write path broken for same reason
+
+### Decisions Made
+- Write routing: durable preferences → workspace/MEMORY.md; daily notes → memory/YYYY-MM-DD.md; docs/explainers → Obsidian
+- Obsidian Piper folder stays as human-readable reference, not runtime canonical
+
+## Session 28 — Piper Guard Skills
+
+**Date:** 03.15.2026
+**Time spent:** ~30m
+
+### What We Built
+- Evaluated the `openclaw-superpowers` community post; identified the genuinely useful skills vs. what was already covered
+- Built 3 skills manually (no install script): workspace-integrity-guardian, spend-circuit-breaker, loop-circuit-breaker
+- Transferred all files via base64-over-SSH, initialized integrity baseline, registered crons
+
+### What Shipped
+- `workspace-integrity-guardian` 🛡️ — SHA-256 hashes SOUL.md, MEMORY.md, AGENTS.md; weekly cron Sunday 08:00
+- `spend-circuit-breaker` 💰 — reads OpenClaw session JSONL cost.total; daily cron 09:00; baseline: $31.26 this month
+- `loop-circuit-breaker` 🔄 — behavioral rule, no cron; trips after 2 identical (tool, error) failures
+
+### Decisions Made
+- Did not run the post's `install.sh` — ironic to blindly run a shell script for "security" tools
+- Skipped 4 skills already covered: prompt-injection-guard (vault_security.py), dangerous-action-guard (exec-approvals.json), project-onboarding (SOUL.md/USER.md), multi-agent-coordinator (not applicable)
+- OpenClaw already computes cost.total per message in JSONL — spend tracking is trivial
+
+## Session 29 — Full Pi Recoverability Backup System
+
+**Date:** 03.17.2026
+**Time spent:** ~50m
+
+### What We Built
+- Three-layer backup system making the Pi fully recoverable from SD card failure
+- Layer 1: piper-config GitHub repo — now captures OpenClaw config + system-level files nightly
+- Layer 2: USB stick rsync (already existed, unchanged)
+- Two new snapshot scripts: `system-snapshot.sh` (piper) and `bfosler-system-snapshot.sh` (bfosler)
+- `backup_notify.py` — Telegram notification after every git push with commit message + hash
+- `piper-backup` skill — on-demand backup trigger + status check from Telegram/Discord
+- `RECOVERY.md` — complete 12-step rebuild guide from scratch
+
+### What Shipped
+- `/home/piper/.openclaw/system-snapshot.sh` — snapshots openclaw.json (scrubbed), template, start-secure.sh, piper systemd services, credstore key names → `workspace/config-snapshots/`
+- `/home/bfosler/.openclaw/bfosler-system-snapshot.sh` — exports UFW rules, fstab, homebridge config, sudoers.d, system services → `workspace/system-snapshots/`
+- `workspace/scripts/backup_notify.py` — Telegram push notification after every git commit
+- `workspace/skills/piper-backup/SKILL.md` — piper-backup skill registered ✓ ready
+- `workspace/RECOVERY.md` — full rebuild guide
+- Updated `git-commit.sh` — snapshot file classification + Telegram notify after push
+- Fixed `sync-bfosler-scripts.sh` — was broken since `.openclaw/` had drifted to 700; restored to 710 (g+x)
+- `/etc/sudoers.d/piper-backup-snapshot` — allows piper to call bfosler's snapshot script
+- Cron: bfosler 2:45am, piper 2:48am (before 2:55am git catch-all)
+
+### Bugs Fixed
+- `sync-bfosler-scripts.sh` silently failing for weeks — `/home/piper/.openclaw/` had drifted to `700` (no group execute bit), blocking bfosler from traversing to workspace/. Fix: `sudo chmod g+x /home/piper /home/piper/.openclaw` restoring intended `710` permissions
+
+### Decisions Made
+- Single repo (piper-config) for all backup content — already has push mechanism, no new repo needed
+- openclaw.json included in snapshot but scrubbed of live token values (belt-and-suspenders; most were already empty)
+- Credstore `.enc` files NOT backed up to git — encrypted with this Pi's machine-id, useless on different hardware. Key names documented in SECRETS.md instead
+- Telegram notification fires after every git push (not just nightly cron) so real-time skill deployments also confirm

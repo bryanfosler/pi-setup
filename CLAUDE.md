@@ -74,7 +74,7 @@
 - rpcbind: disabled (service + socket)
 
 ## SSH Troubleshooting
-- `bryanfoslerpi5.local` mDNS sometimes fails → fall back to Tailscale IP `100.99.74.37`
+- **Always use Tailscale IP `100.99.74.37` first** — mDNS (`bryanfoslerpi5.local`) is unreliable and will hang 60s on timeout
 - Host key error after IP change: `ssh-keygen -R 100.99.74.37`
 - Multi-line Python scripts over SSH: write locally with Write tool, pipe with `ssh host "cat > /remote/path" < /local/file`
 
