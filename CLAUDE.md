@@ -12,16 +12,28 @@
 
 ## Quick Access URLs
 
-| What | Local | Via Tailscale |
-|---|---|---|
-| Open-WebUI (chat) | http://bryanfoslerpi5.local:3000 | http://100.99.74.37:3000 |
-| Petcam viewer | http://bryanfoslerpi5.local:8080 | http://100.99.74.37:8080 |
-| Petcam viewer (public, no Tailscale) | — | https://bryanfoslerpi5.taildef31a.ts.net |
-| Petcam stream (direct MJPEG) | http://bryanfoslerpi5.local:8080/stream | http://100.99.74.37:8080/stream |
-| Ollama API | http://bryanfoslerpi5.local:11434 | http://100.99.74.37:11434 |
-| Homebridge UI | http://bryanfoslerpi5.local:8581 | http://100.99.74.37:8581 |
-| ntfy alerts | https://ntfy.sh/bryan-petcam-302 | — |
-| SSH (local) | `ssh bfosler@bryanfoslerpi5.local` | `ssh bfosler@100.99.74.37` |
+| What | Local (LAN) | Via Tailscale | Access Notes |
+|---|---|---|---|
+| Open-WebUI (chat) | http://bryanfoslerpi5.local:3000 | http://100.99.74.37:3000 | Browser, no auth |
+| Homebridge UI | http://bryanfoslerpi5.local:8581 | http://100.99.74.37:8581 | Browser, no auth |
+| Petcam viewer | http://bryanfoslerpi5.local:8080 | http://100.99.74.37:8080 | Only when GoPro connected |
+| Petcam viewer (public) | — | https://bryanfoslerpi5.taildef31a.ts.net | No Tailscale needed; auth: `GilligansIsland` / `Gilly1127` |
+| Petcam stream (MJPEG) | http://bryanfoslerpi5.local:8080/stream | http://100.99.74.37:8080/stream | Direct stream URL |
+| Ollama API | — | http://100.99.74.37:11434 | Tailscale only (loopback-restricted); for API calls |
+| Fitbit JSON | — | http://100.99.74.37:8766/latest-weight.json | Tailscale only; backfill at `/backfill-weights.json` |
+| ntfy petcam alerts | https://ntfy.sh/bryan-petcam-302 | — | Browser or ntfy app |
+| SSH | `ssh bfosler@bryanfoslerpi5.local` | `ssh bfosler@100.99.74.37` | Use Tailscale IP — mDNS can hang |
+
+### Tailscale requirement
+**Open-WebUI and Homebridge are blocked to LAN without Tailscale from outside the home network** (Docker firewall rules restrict to `100.64.0.0/10`). Ollama and Fitbit JSON are Tailscale-only even on LAN.
+
+If Tailscale isn't connected: open the Tailscale app on Mac → connect → then use the `100.99.74.37` URLs.
+
+### OpenClaw / Piper (no web UI)
+OpenClaw has no browser dashboard. Interact via:
+- **Telegram:** `@Piper_RPi5Bot` — just message it
+- **Discord:** message in the Pi server channel
+- **SSH → CLI:** `ssh bfosler@100.99.74.37` then `piper-logs`, `piper-status`, `piper-restart`
 
 ## Services
 | Service | Port | Status | Notes |
