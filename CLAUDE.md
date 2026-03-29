@@ -55,6 +55,7 @@ OpenClaw has no browser dashboard. Interact via:
 - **Model:** `claude-haiku-4-5-20251001` (primary), `claude-sonnet-4-6` (fallback)
 - **Skills:** session-memory, obsidian, notion, local-infer (requires `NOTION_API_KEY` in config env block)
 - **To replace API key:** `python3` REPL on Pi → `key = input('Paste key: ')` → update auth-profiles.json → restart service
+- **To rotate gateway token:** `printf '%s' "$(openssl rand -hex 32)" | openssl enc -aes-256-cbc -pbkdf2 -pass file:/etc/machine-id -out ~/.config/systemd/user/credstore/openclaw-gateway-token.enc && systemctl --user restart openclaw-gateway`
 - **To check logs:** `npx openclaw logs --plain --limit 50`
 - **To verify model:** look for `model=` in `embedded run start` log line
 - **models.json:** `~/.openclaw/agents/main/agent/models.json` — all local models must have `contextWindow: 4096` (not 131072)
