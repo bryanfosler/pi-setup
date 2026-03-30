@@ -1,3 +1,28 @@
+## Session 39 — OpenClaw Gateway Service Restore + Token Rotation
+
+**Date:** 03.28.2026
+**Time spent:** ~25m
+
+### What We Built
+- Restored deleted `openclaw-gateway.service` systemd unit (only `.bak` files remained)
+- Updated `start-secure.sh` to make gcal credentials optional via `decrypt_optional()` function
+- Removed stale piper-owned `/dev/shm/openclaw-runtime.json` blocking service startup
+- Removed broken TTS output style (`~/.claude/output-styles/tts-summary.md`)
+
+### What Shipped
+- `openclaw-gateway.service` active and running, token injected into both config fields
+- Gateway token rotation one-liner documented in `CLAUDE.md` and TIL
+
+### Bugs Fixed
+- Service file missing → restored pointing to `start-secure.sh` instead of hardcoded env var
+- `/dev/shm/openclaw-runtime.json` owned by `piper`, not `bfosler` → removed stale file
+- `start-secure.sh` crashing on missing gcal `.enc` files → `decrypt_optional()` wrapper
+
+### Decisions Made
+- Gateway token rotation is a two-step: re-encrypt `.enc`, restart service — no manual config edits needed
+
+---
+
 ## Session 25 — Obsidian iCloud Migration + Vault Organization
 
 **Date:** 03.09.2026
@@ -935,3 +960,140 @@
 - openclaw.json included in snapshot but scrubbed of live token values (belt-and-suspenders; most were already empty)
 - Credstore `.enc` files NOT backed up to git — encrypted with this Pi's machine-id, useless on different hardware. Key names documented in SECRETS.md instead
 - Telegram notification fires after every git push (not just nightly cron) so real-time skill deployments also confirm
+
+## Session 30 — Dashboard Links
+
+**Date:** 03.17.2026
+**Time spent:** ~10m
+
+### What We Built
+- N/A — documentation update only
+
+### What Shipped
+- Updated `CLAUDE.md` Quick Access URLs table: added Fitbit JSON endpoint, Access Notes column, Tailscale requirement note, OpenClaw access instructions
+- Added Dashboards & Links section to Obsidian `Projects/pi-setup.md`
+
+### Bugs Fixed
+- N/A
+
+### Decisions Made
+- N/A
+
+## Session 31 — CostClaw Dashboard Links
+
+**Date:** 03.17.2026
+**Time spent:** ~5m
+
+### What We Built
+- N/A — documentation update only
+
+### What Shipped
+- Added CostClaw dashboard (port 3333) to both the Dashboards & Links table and Key Services table in Obsidian `Projects/pi-setup.md`
+- Local: `http://bryanfoslerpi5.local:3333`, Tailscale: `http://100.99.74.37:3333`
+
+### Bugs Fixed
+- N/A
+
+### Decisions Made
+- N/A
+
+## Session 32 — Session Logging Overhaul: Bryan's Logs + piper_notion.py TITLE/TAGS
+
+**Date:** 03.18.2026
+**Time spent:** ~2h30m
+
+### What We Built
+- Patched `piper_notion.py` to extract `TITLE:` and `TAGS:` from Haiku response; added `write_bryans_log_entry()` function
+- Created Bryan's Logs system: daily Obsidian files at `AI Knowledge/Bryan's Logs/YYYY-MM-DD.md` with 4-line Claude Code + Piper entries
+- Rewrote `stop.py` to capture Bryan's questions (not Claude's responses) as breadcrumbs
+- Expanded `wrap-up/SKILL.md` with 44-tag taxonomy, slug naming rules, wikilink requirements, step 8b Bryan's Log
+- Created `tag-taxonomy.md` reference in vault with full taxonomy table and Dataview queries
+- Backfilled all 111 CC session files (Feb 19 → Mar 17) with proper slugs, tags, wikilinks via 4 parallel agents
+
+### What Shipped
+- `piper_notion.py` patched on Pi, end-to-end tested (TITLE/TAGS parse + Bryan's Log write)
+- `AI Knowledge/Bryan's Logs/` directory on Pi with `piper:piper` ownership
+- `~/.claude/hooks/stop.py` — user-question breadcrumb capture
+- `~/.claude/skills/wrap-up/SKILL.md` — full session logging spec
+- pi-setup issue #52 created, logged, closed; Notion sync ✓
+- claude-config commit `99e6b7e` pushed
+
+### Bugs Fixed
+- piper_notion.py syntax error: apostrophe in single-quoted string for `'# Bryan's Log — '`
+- Bryan's Logs Permission denied on Pi: `mkdir -p` + `chown piper:piper`
+- Wrong date arg format: `--summary --force 2026-03-18` → `--summary --force --date 2026-03-18`
+
+### Decisions Made
+- stop.py captures user questions (not Claude responses) — breadcrumbs should reflect what Bryan asked
+- No Mac-side Haiku API in hooks — CC Pro subscription doesn't cover external Python processes
+- Bryan's Logs as 4-line index entries only — full detail in session summary files
+- Retroactive Bryan's Log entries skipped — building forward from today
+
+## Session 33 — Piper Task-Builder: Reliable Notion Creation from Discord
+
+**Date:** 03.21.2026
+**Time spent:** ~45m
+
+### What We Built
+- Diagnosed root cause of silent task creation failures: `NOTION_API_KEY` missing from `openclaw.json` env block
+- Audited `task-builder` skill, `create_notion_task.py`, and `lib/notion.py` — script was correct, just missing the key
+- Added `execApprovals: { enabled: false }` to Discord channel config to eliminate double-approval friction
+- Rewrote `SKILL.md` fast-path: one-liner → single preview → yes → immediate exec (no coaching rounds)
+- Injected `NOTION_API_KEY` securely from Mac `~/.claude/.env` to Pi `openclaw.json` via SSH pipe
+
+### What Shipped
+- `/home/piper/.openclaw/openclaw.json` — `execApprovals` disabled for Discord + `NOTION_API_KEY` injected
+- `/home/piper/.openclaw/workspace/skills/task-builder/SKILL.md` — full fast-path rewrite
+- piper-config issue #3 created, logged, closed
+- Live test: `create_notion_task.py` ran end-to-end, Notion URL returned, exit 0
+
+### Bugs Fixed
+- Silent task creation failure: `NOTION_API_KEY` was never added to `openclaw.json` env block — script exited 1 immediately after confirmation with no visible error to user
+- Discord exec approval friction: no `execApprovals` block in live config caused OpenClaw to prompt for exec approval on top of the skill's own confirmation step
+- Multiline SSH command failures in Warp: solved by writing Python inject script via Write tool + base64 transfer
+
+### Decisions Made
+- Kept `create_notion_task.py` unchanged — logic was correct, only the key was missing
+- Did not add local HTTP endpoint — exec path works fine once key is set and approvals disabled
+- Fast-path skips pre-confirmation coaching for complete one-liners; one preview → yes → create
+
+---
+
+## Session N — OpenClaw OAuth + Plugin Path Fix
+
+**Date:** 03.23.2026
+**Time spent:** ~25m
+
+### What We Built
+- Diagnosed two openclaw errors from logs: stale OAuth token + missing plugin path
+
+### What Shipped
+- Piper restored and responding in Discord
+
+### Bugs Fixed
+- `refresh_token_reused`: re-authed openai-codex via `npx openclaw models auth login --provider openai-codex`
+- `plugin path not found /home/piper/costclaw-safe`: fixed with `sed -i` to replace with `/home/piper/token-dash`
+
+### Decisions Made
+- Always use `sed` for simple config string replacements on Pi — avoid python3 -c multi-line blocks in Warp
+
+## Session 34 — Discord 401 Root Cause + Secure Token Rotation
+
+**Date:** 03.29.2026
+**Time spent:** ~1h 5m
+
+### What We Built
+- Ran a systematic debug pass across OpenClaw Discord channel startup, service context, and runtime credential state.
+- Validated failure mode by reproducing direct Discord API auth failure (`/users/@me` returning 401) using runtime-loaded token.
+
+### What Shipped
+- Discord bot credential rotated securely into Pi credstore (`openclaw-discord.enc`) with no plaintext persisted.
+- `openclaw-gateway` restarted and confirmed healthy Discord startup/login.
+- End-to-end user validation completed: Piper responded in Discord channel.
+
+### Bugs Fixed
+- Discord channel repeatedly failed startup with `401 Unauthorized` and `Failed to resolve Discord application id`.
+
+### Decisions Made
+- Do not roll back via git for credential-auth failures; treat as secret rotation incident, not code regression.
+- Verify Discord issues from the service owner runtime context before making changes.

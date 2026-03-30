@@ -531,3 +531,15 @@ The fix was using `allowlist` + adding `"*"` to `allowFrom` for the use cases wh
 All five of these issues happened in the same session because there was no migration path documented. The upgrade script just replaced the binary and moved on. When you're running a homelab AI assistant that touches multiple integrations (Telegram, Discord, WebUI, Ollama, Anthropic), "silent breaking changes × 5" adds up fast.
 
 Going forward: treat OpenClaw upgrades like a database migration — make a backup, read the release notes, test channels one at a time after upgrading.
+
+---
+
+## Quick Secret Entry on zsh (No Echo, No Paste in Chat)
+
+When entering sensitive tokens in a zsh terminal, use:
+
+```bash
+read -rs "DISCORD_TOKEN?Paste new Discord bot token: "; echo
+```
+
+Then pipe directly to the target command and `unset` the variable right after. This avoids putting secrets in command history, avoids accidental chat paste, and avoids bash-specific `read -p` errors (`read: -p: no coprocess`) that happen in zsh.
