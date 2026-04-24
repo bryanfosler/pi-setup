@@ -1097,3 +1097,70 @@
 ### Decisions Made
 - Do not roll back via git for credential-auth failures; treat as secret rotation incident, not code regression.
 - Verify Discord issues from the service owner runtime context before making changes.
+
+## Session 41 — Hermes Channel Verification (Telegram, Discord, ClawDeck)
+
+**Date:** 04.11.2026
+**Time spent:** ~45m
+
+### What We Built
+- Full verification of all Hermes gateway communication surfaces: Telegram, Discord, and ClawDeck (macOS/iOS)
+
+### What Shipped
+- Discord Message Content Intent enabled in developer portal — Hermes bot now connects as Hermes#2629 with 9 channels
+- Confirmed Telegram round-trip with Halo agent
+- Confirmed macOS ClawDeck → Hermes HTTP+SSE path working (POST /v1/chat/completions 200)
+- Diagnosed Mac ClawDeck flake: duplicate openclaw-gateway processes (piper + bfosler users) fighting for port 18789
+
+### Bugs Fixed
+- Discord `PrivilegedIntentsRequired` — root cause: Message Content Intent not enabled in Discord developer portal. Fixed by toggling it on and restarting hermes-gateway.service
+- Mac ClawDeck intermittent disconnect — caused by rogue `openclaw-gateway` process under bfosler user competing with piper-user daemon for port 18789. Rogue process self-resolved (crashed); root launcher unknown
+
+### Decisions Made
+- Rename of ClawDeck tabled — options discussed (do nothing / display-name only / full rename) but no action taken
+- Discord slash command cap (100 global, 6 skills unregistered) is cosmetic — defer until it causes real friction
+- Duplicate openclaw-gateway is a watch item — check `ps -u bfosler | grep openclaw-gateway` if Mac disconnects again
+
+
+---
+
+## Session 42 — OpenClaw Reliability Investigation + Watchdog Cleanup
+
+**Date:** 04.24.2026
+**Time spent:** ~1h45m
+
+### What We Built
+- Conducted data-first investigation of "chronic OpenClaw reliability" perception. Hard data refuted the crash-loop theory: gateway `NRestarts=0`, 11h+ uptime, 0 failures since 2026-04-19. The Telegram alert spam ("Pi Health Alert") wasn't about the gateway — it was about `open-webui` (a Docker container intentionally stopped during the 04-19 memory-cascade cleanup, exited code 0, never restarted).
+- Patched `pi_health.py` (`/home/bfosler/.openclaw/pi_health.py`) to add `DOCKER_CRASH_ONLY_CONTAINERS = {"open-webui"}` and a linked-container HTTP skip pattern. Mirrors the existing `SYSTEMD_CRASH_ONLY_SERVICES` precedent for petcam. Backup at `pi_health.py.bak-20260424-010147`. Test-run confirmed `[SKIP]` on both docker and HTTP checks; no Telegram alert fired.
+- Un-paired 2 stale `openclaw-control-ui` (webchat) device entries from `/home/piper/.openclaw/devices/paired.json`. Both had `approvedScopes` of `[admin, approvals, pairing]` — missing `operator.read`, so they had been polling `sessions.list` every 30s with 100% rejection rate (459 failed requests / 24h). Backup at `paired.json.bak-20260424-011253`. Verified: 0 `missing scope: operator.read` errors in the hour after.
+- Reset the OpenClaw gateway's Discord bot token (separate from Halo's bot — there are two distinct Discord bots on the Pi). Token blob lives in `/home/piper/.config/systemd/user/credstore/openclaw-discord.enc`, AES-256-CBC + machine-id. Bryan ran the one-line `ssh -t … read -rsp … openssl enc … chown … chmod … systemctl restart openclaw-gateway` flow. Verified post-reset: `users resolved: 694698567096598628`, `client initialized as 1478380205381914675 (Piper)`, no more 401s.
+- Built and deployed `discord_socket_watch.py` (`/home/bfosler/.openclaw/discord_socket_watch.py`) — a sibling watchdog that runs every 48h via cron (`0 6 */2 * *`), analyzes the past 48h of openclaw-gateway journal for stale-socket cycles, and only sends a Telegram alert if the pattern WORSENS (interval drops below 30 min, non-1006 close codes appear, or a "starting provider (@)" event has no matching "client initialized" within 30s). First test run: STABLE — 12 cycles in 48h, avg 37.7 min, all 1006, 0 currently-stuck failures.
+
+### What Shipped
+- `pi_health.py` patched on Pi (with backup) — alerts no longer fire for intentionally-stopped Docker containers
+- `discord_socket_watch.py` deployed to Pi + cron entry installed (every 48h at 6am)
+- `paired.json` cleaned: 6 → 4 entries; orphaned web-UI pairings removed
+- OpenClaw Discord bot reconnected with fresh token; bot is `@Piper`, app id `1478380205381914675`, guild `PiperPi5`
+- 3 memory updates locally (`project_halo_is_quinn.md`, `reference_halo_discord.md`, new `reference_openclaw_discord.md`) + index — captures the two-bot disambiguation, credstore architecture, and the known-benign stale-socket cycle
+
+### Bugs Fixed
+- **`pi_health.py` false alerts for stopped open-webui** (1,237 failure events in last 7 days, ~2 alerts/hour = ~100% of recent Telegram noise). Was treating manual stops the same as crashes.
+- **3 orphaned web-UI pairings creating 459 spurious gateway errors per 24h.** Mistakenly read as "OpenClaw is unreliable" when it was actually "abandoned browser tabs are spamming with bad scopes."
+- **OpenClaw Discord bot 401 retry-loop (attempt 8/10 of 10 before fix).** Token had been revoked/expired; the bot's auto-restart logic was about to give up permanently.
+- **`discord_socket_watch.py` initial false positive** — first test counted 595 reconnect "failures" because it matched on bare "starting provider" (a frequent subsystem event) instead of "starting provider (@Piper)" (the actual provider re-init). Second iteration counted 2 false failures from pre-token-reset history. Final logic: only flag if the *most recent* start has no matching init within 30s. Sent a clarification message to the PI Alerts Telegram group after each false positive.
+
+### Decisions Made
+- **Pi-side cron beats `/schedule` cloud routine** for the Discord stale-socket watcher — the data lives in piper's journalctl, which is unreachable from Anthropic's cloud infrastructure. Cloud routines are right for publicly-readable data; local journal observability has to run locally.
+- **Promote a Docker container to "crash-only," not delete it from the watchdog list.** If you ever restart open-webui and it actually crashes, you want the alert. The semantic upgrade (alert on real crashes, silent on manual stops) is worth ~10 lines of new code.
+- **Don't fix the Discord stale-socket cycle now.** Restart attempts every ~35 min, reconnects in <1s, no user-visible message loss. Memorialized as known-benign with explicit revisit triggers (cycle <30 min, missed messages, or 100-server scaling).
+
+### Known Issues / Deferred
+- **Stale-socket Discord cycle** every ~35 min is benign-pending-monitoring. The new watchdog will alert if it degrades; otherwise silent.
+- **Pi swap pressure** at 79% of 2GB. Stable, not growing, not currently degrading anything we measured. Background concern if more services are added.
+- **Pi-Setup repo `sessions.md` had an orphan Session 41 entry** from 04.11.2026 that was never committed. Captured in this commit alongside today's Session 42.
+
+### Process Lessons
+- **Data before theories — every time.** I started this session by guessing at the failure ("scope mismatch on ClawDeck token") before pulling logs. The actual failure was an open browser tab, not ClawDeck. Bryan caught it immediately ("can you use data and hard information to help troubleshoot here, no guesses, lets act on data").
+- **Generic alert headers + alert fatigue create false narratives.** The "Pi Health Alert" Telegram subject is the same regardless of which service triggered it. After enough fires, your brain auto-completes "OpenClaw is broken" — even when 100% of recent firings are about a totally different service. The fix is partly mechanical (per-service granularity in alert subjects) and partly process (always verify alert *content*, not just count).
+- **One bug found often hides the next layer.** Token reset eliminated the 401 storm, which then exposed the stale-socket cycle that had been masked. Plan for this when fixing infrastructure: budget time for the second issue to surface.
+- **Watchdog calibration is its own bug class.** First deploy of `discord_socket_watch.py` produced two consecutive false positives. Filtering on "currently stuck" (most recent event has no matching pair) instead of "any failure in window" removes both the noisy match and the historical-data false positive.
