@@ -543,3 +543,39 @@ read -rs "DISCORD_TOKEN?Paste new Discord bot token: "; echo
 ```
 
 Then pipe directly to the target command and `unset` the variable right after. This avoids putting secrets in command history, avoids accidental chat paste, and avoids bash-specific `read -p` errors (`read: -p: no coprocess`) that happen in zsh.
+
+---
+
+## "OpenClaw Is Crashing" Was a Mental Model, Not a Fact
+
+Here's the most expensive lesson from a recent reliability investigation. We spent weeks operating under the assumption that "OpenClaw keeps crashing" — based on a steady stream of Telegram notifications saying things were broken. The actual data refuted every word of that sentence.
+
+### The Detective Work
+
+When we finally pulled hard data from systemd, the gateway showed `NRestarts=0` over 11 hours of continuous uptime. The watchdog log showed 91 gateway crashes total across all of history — *every single one of them on 2026-04-19*, zero crashes in the five days since. The gateway was, in fact, *fine*.
+
+So what was firing all those Telegram alerts? `pi_health.py` runs every 5 minutes and checks a list of services. One of those services — Open WebUI — had been intentionally turned off on 04-19 during a memory-cascade cleanup. We never told the watchdog. So twice an hour, for four straight days, it cried wolf about a service we'd deliberately killed.
+
+The Telegram subject line for every alert was the generic `⚠️ Pi Health Alert`. The brain auto-completes the rest. After enough fires, "Pi Health Alert" *means* "OpenClaw is broken" — even when 100% of the recent firings are about a totally different service.
+
+### Three Distinct Failure Modes Hiding in the Logs
+
+While we were in the journal, three real (smaller) issues surfaced. None of them were what we thought was wrong:
+
+1. **97% of the gateway's request errors came from 3 abandoned browser tabs.** Someone (you) had paired the OpenClaw web UI on a phone or other laptop without granting full operator scopes. The tabs were polling `sessions.list` every 30 seconds and getting a 100% rejection rate (459 failures / 24h). Aggregate failure-rate metrics looked alarming until we sliced by connection ID and realized it was a per-client problem, not a per-method problem. Fix: un-pair the orphans. Result: 0 errors in the next hour.
+
+2. **Discord 401 retry loop.** The OpenClaw gateway's Discord bot (separate from Halo's Discord bot, which is critical to remember) was on its 8th of 10 auto-restart attempts before giving up forever. Token had been revoked or the app deleted. Resetting in the developer portal + re-encrypting into the credstore + restarting the gateway was a 30-second fix. The interesting thing is *it never asked for help* — Discord 401s landed in journal logs that nobody was looking at, and the script was about to silently abandon the integration.
+
+3. **`chat.send thinking` rejection.** Session 44 had migrated the `thinking` field from a boolean to a string ("on" / "off"), but the gateway treats absent key as "off" and rejects "off" as an unrecognized value. Every time you used ClawDeck with thinking disabled, you were silently getting a rejection. 13 failures / 24h, six different connection IDs — clearly a code path bug, not one bad client.
+
+### The Actual Lesson
+
+Three takeaways that will outlive this specific bug:
+
+**Process reliability is not user reliability.** A service can have zero crashes and still feel completely broken to the user. NRestarts=0 plus 30% request failure rate is a real signature for "the process is fine but the system is broken." Always ask both questions: is the process alive, AND are its requests succeeding? They have separate answers.
+
+**Generic alert headers compound into false narratives.** If your watchdog sends ten different services all under the subject "Pi Health Alert," operator brain will eventually attribute all of them to whichever service is on your mind. The fix is partly mechanical (alert subjects should name the service) and partly process (always verify the *body* against the count, especially when alerts share headers).
+
+**Watchdog calibration is its own bug class.** The first version of the new `discord_socket_watch.py` script we wrote *immediately* fired two false-positive alerts. First because it grep'd for "starting provider" without the bot identity suffix and matched 595 unrelated subsystem events. Second because it counted reconnect failures from before the token reset (when the bot was legitimately broken). Final logic only flags "currently stuck" state — not "any failure within the window." When you write monitoring code, you need to test it against real history, not synthetic happy-path data — otherwise the first thing it does in production is shout about ghosts.
+
+The whole investigation took ~1h45m and shipped four cleanups. The most valuable artifact wasn't any of the fixes — it was the mental-model correction. "OpenClaw is broken" had been load-bearing in every decision for weeks. Now it isn't.
